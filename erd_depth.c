@@ -3,9 +3,11 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
-#include <gsto_masses.h>
-#include <libgsto.h>
-#include "units.h"
+
+
+#include <jibal_gsto.h>
+
+#include <jibal_units.h>
 
 #define NLINE 200
 #define NAMELEN 1000 /* This is the maximum length for a filename. FIXME: Dynamic length! */
@@ -29,14 +31,13 @@
 #define I_ENERGY   1
 #define I_DETANGLE 2
 #define I_TARANGLE 3
-#define I_DETDIST  4
-#define I_STOSTEP  5
-#define I_OUTSTEP  6
-#define I_DENSITY  7
-#define I_SCALE    8
-#define I_CROSS_SECTION 9
-#define I_MAXDSTEP 10
-#define I_NITER 11
+#define I_STOSTEP  4
+#define I_OUTSTEP  5
+#define I_DENSITY  6
+#define I_SCALE    7
+#define I_CROSS_SECTION 8
+#define I_MAXDSTEP 9
+#define I_NITER 10
 
 #define F_MASSES DATAPATH/masses.dat
 #define NITER 4
@@ -50,12 +51,28 @@
 #define XSTR(x) STR(x)
 #define STR(x) #x
 
+
+#define C_ANGSTROM  1.0e-10
+#define C_NM        1.0e-9
+#define C_UM        1.0e-6
+#define C_MM        1.0e-3
+#define C_CM        1.0e-2
+#define C_FS        1.0e-15
+#define C_PS        1.0e-12
+#define C_NS        1.0e-09
+#define C_CM2       0.0001
+#define C_CM3       0.000001
+#define C_G_CM3     1000.0
+#define C_MEV_UM    1.0e-25
+#define C_UG 	    1.0e-9
+#define C_G	    1.0e-3
+
+
 static const char *inlines[] = {
    "Beam:",
    "Energy:",
    "Detector angle:",
    "Target angle:",
-   "Detector distance:",
    "Depth step for stopping:",
    "Depth step for output:",
    "Target density:",
@@ -94,7 +111,6 @@ typedef struct {
    double E;
    double detector_angle;
    double target_angle;
-   double det_dist;
 } Measurement;
 
 typedef struct {
@@ -288,13 +304,13 @@ void output(General *general,Concentration *conc,Event *event)
       z = event[ie].Z;
       a = event[ie].A;
 #ifdef DEBUG
-      printf("A %8i %10.3e %14.5e\n",z,event[ie].d/(1.0e15/C_CM2),event[ie].w);
+      printf("A %8i %10.3e %14.5e\n",z,event[ie].d/(C_TFU),event[ie].w);
 #endif
       ip = (int) (event[ie].d/general->outstep + NABOVE);
       ip = max(0,ip);
       ip = min(nprofile-1,ip);
 #ifdef DEBUG
-      printf("%8i %10.2f %14.5f %8i\n",ip,event[ie].d/(1.0e15/C_CM2),
+      printf("%8i %10.2f %14.5f %8i\n",ip,event[ie].d/(C_TFU),
               event[ie].w,event[ie].n);
 #endif
       conc->wprofile[z][a][ip] += event[ie].w;
@@ -362,7 +378,7 @@ void output(General *general,Concentration *conc,Event *event)
 		    relerr = 1.0/sqrt((double ) (conc->nprofile[iz2][ia2][ip]));
 		  else
 		    relerr = 1;
-                  fprintf(fp,"%10.3f %10.3f %10.3f ",d/(1.0e15/C_CM2),
+                  fprintf(fp,"%10.3f %10.3f %10.3f ",d/(C_TFU),
                                                      (mdep-mdep0)/(C_UG/C_CM2),
                                                      (dep-dep0)/C_NM);
 /*
@@ -399,7 +415,7 @@ void output(General *general,Concentration *conc,Event *event)
       d = (ip - NABOVE)*general->outstep;
       id = max(0,(int) (d/conc->dstep));
       d += 0.5*general->outstep;
-      fprintf(fp,"%7.2f %10.3f %10.3f ",d/(1.0e15/C_CM2),
+      fprintf(fp,"%7.2f %10.3f %10.3f ",d/(C_TFU),
                                         (mdep-mdep0)/(C_UG/C_CM2),
                                         (dep-dep0)/C_NM);
       fprintf(fp,"%10.4e\n",conc->wprofsum[ip]/wsum);
@@ -477,7 +493,7 @@ void calculate_recoil_depths(General *general,Measurement *meas,Event *event,
          event[ie].d = 0.5*(d - dstep) + (conc->Ebeam[id]*K - (recE - dE))/(rk - bk);
          beamE = conc->Ebeam[0];
 #ifdef DEBUG
-         printf("A %8i %10.3f\n",Z,event[ie].d/(1.0e15/C_CM2));
+         printf("A %8i %10.3f\n",Z,event[ie].d/(C_TFU));
 #endif
       } else {
          while((id < general->maxdstep) && (recE < beamE)){
@@ -499,7 +515,7 @@ void calculate_recoil_depths(General *general,Measurement *meas,Event *event,
          beamE = conc->Ebeam[id] + (event[ie].d - id*dstep)*
                  (conc->Ebeam[id] - conc->Ebeam[id-1])/dstep;
 #ifdef DEBUG
-         printf("B %8i %10.3f\n",Z,event[ie].d/(1.0e15/C_CM2));
+         printf("B %8i %10.3f\n",Z,event[ie].d/(C_TFU));
 #endif
       }
 
@@ -541,8 +557,8 @@ double Andersen(int z1, int z2, double E, double theta) { /* E in CM coordinates
 double Serd(int z1,double m1,int z2,double m2,double t,double E, enum cross_section cs) /* t is recoil angle in lab, E lab energy of incident particle */
 {
     double E_cm = m2*E/(m1+m2);
-    double t_sc=PI-2*t;
-    double sigma_r = ipow2(z1*z2*P_E*P_E/(8*PI*P_EPS0*E))*ipow2(1.0 + m1/m2)/ipow(cos(t),3);
+    double t_sc=C_PI-2*t;
+    double sigma_r = ipow2(z1*z2*C_E*C_E/(8*C_PI*C_EPSILON0*E))*ipow2(1.0 + m1/m2)/ipow(cos(t),3);
     double F;
     switch(cs) {
         case CS_RUTHERFORD:
@@ -586,7 +602,7 @@ double Srbs(int z1,double m1,int z2,double m2,double t,double E, enum cross_sect
 double Srbs_mc(double z1,double z2,double t,double E)
 {
    double value;
-   value = ipow2((z1*z2*P_E*P_E)/(4.0*PI*P_EPS0))*ipow2(1.0/(4.0*E))*
+   value = ipow2((z1*z2*C_E*C_E)/(4.0*C_PI*C_EPSILON0))*ipow2(1.0/(4.0*E))*
            ipow(1.0/sin(t/2.0),4);
    return(value);
 }
@@ -769,7 +785,7 @@ void create_conc_profile(General *general,Measurement *meas,
    printf("\n");
 
    for(id=0;id<general->maxdstep/10;id++){
-      printf("%6.1f ",(id*conc->dstep)/(1.0e15/C_CM2));
+      printf("%6.1f ",(id*conc->dstep)/(C_TFU));
       for(iz2=1;iz2<general->maxelements;iz2++){
          if(general->element[iz2] > 0){
             printf("%2i %4.1f ",iz2,conc->w[iz2][id]*100.0);
@@ -799,15 +815,15 @@ void clear_conc(General *general, Concentration *conc)
 void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
     int z1, z2;
     int s;
-    gsto_table_t *table;
+    jibal_gsto *gsto_workspace;
     for(z1=1;z1<general->maxelements;z1++){
         sto->sum[z1] = NULL;
         for(z2=1;z2<general->maxelements;z2++){      
             sto->ele[z1][z2] = NULL;
         }
     }
-    table=gsto_init(general->maxelements, XSTR(STOPPING_DATA));
-    if(!table) {
+    gsto_workspace=jibal_gsto_init(general->maxelements, XSTR(STOPPING_DATA));
+    if(!gsto_workspace) {
         fprintf(stderr, "Could not init stopping table.\n");
         return;
     }
@@ -815,15 +831,15 @@ void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
     for(z1=0;z1<general->maxelements;z1++){
              for(z2=0;z2<general->maxelements;z2++){
                 if(general->element[z1] > 0 && general->element[z2]>0) {
-                    gsto_auto_assign(table, z1, z2);
+                    jibal_gsto_auto_assign(gsto_workspace, z1, z2);
                 }
              }
     }
-    if(!gsto_load(table)) {
+    if(!jibal_gsto_load(gsto_workspace)) {
         fprintf(stderr, "Error in loading stopping.\n");
         return;
     }
-    gsto_print_assignments(table);
+    gsto_print_assignments(gsto_workspace);
     
     general->vmax *= 1.2;
     sto->vstep = general->vmax/(sto->vsteps - 1.0);
@@ -832,14 +848,11 @@ void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
     for(z1=0;z1<general->maxelements;z1++){
         for(z2=0;z2<general->maxelements;z2++){
             if(general->element[z1] > 0 && general->element[z2]>0) {
-                sto->ele[z1][z2]=gsto_sto_v_table(table, z1, z2, 0, general->vmax, sto->vsteps); /* 0 as a v_min, does it give any trouble? */
-                for(s=0; s<sto->vsteps; s++) {
-                    sto->ele[z1][z2][s] *= C_EVCM2_1E15ATOMS; /* Units conversion */
-                }
+                sto->ele[z1][z2]=jibal_gsto_sto_v_table(gsto_workspace, z1, z2, 0, general->vmax, sto->vsteps); /* 0 as a v_min, does it give any trouble? */
             }
         }
     }
-    gsto_deallocate(table);
+    jibal_gsto_free(gsto_workspace);
 }
 
 void read_command_line(int argc,char *argv[],General *general)
@@ -869,7 +882,7 @@ void read_setup(General *general,Measurement *meas,Concentration *conc)
    int cont=TRUE,c,i;
 
    general->vmax = 0.0; 
-   conc->dstep = 100*1.0e15/C_CM2;
+   conc->dstep = 100*C_TFU;
    conc->density = 5.0*C_G_CM3;
    general->scale = FALSE;
    general->niter=NITER;
@@ -919,26 +932,19 @@ void read_setup(General *general,Measurement *meas,Concentration *conc)
             file_error(general->setupfile,i+1);
          meas->target_angle *= C_DEG;
       }
-      value = read_inputline(buf,I_DETDIST);
-      if(value != NULL){
-         c = sscanf(value,"%lf",&(meas->det_dist));
-         if(c != 1)
-            file_error(general->setupfile,i+1);
-         meas->det_dist *= C_MM;
-      }
       value = read_inputline(buf,I_STOSTEP);
       if(value != NULL){
          c = sscanf(value,"%lf",&(conc->dstep));
          if(c != 1)
             file_error(general->setupfile,i+1);
-         conc->dstep *= 1.0e15/C_CM2;
+         conc->dstep *= C_TFU;
       }
       value = read_inputline(buf,I_OUTSTEP);
       if(value != NULL){
          c = sscanf(value,"%lf",&(general->outstep));
          if(c != 1)
             file_error(general->setupfile,i+1);
-         general->outstep *= 1.0e15/C_CM2;
+         general->outstep *= C_TFU;
       }
       value = read_inputline(buf,I_DENSITY);      
       if(value != NULL){
@@ -952,8 +958,8 @@ void read_setup(General *general,Measurement *meas,Concentration *conc)
          c = sscanf(value,"%lf %lf",&(general->minscale),&(general->maxscale));
          if(c != 2)
             file_error(general->setupfile,i+1);
-         general->minscale *= 1.0e15/C_CM2;
-         general->maxscale *= 1.0e15/C_CM2;
+         general->minscale *= C_TFU;
+         general->maxscale *= C_TFU;
          general->scale = TRUE;
       }
       value = read_inputline(buf, I_CROSS_SECTION);
@@ -1007,7 +1013,7 @@ void read_events(General *general,Measurement *meas,Event *event,
 {
    FILE *fp;
    char buf[NLINE],type[TYPELEN+1];
-   double x,y,E,M,w,det_dist;
+   double x,y,E,M,w;
    int c,Z,A,n,i=0,cont=TRUE,j,k;
 
    if(!strncmp(general->eventfile,"-",1) && strlen(general->eventfile) == 1)
@@ -1020,8 +1026,6 @@ void read_events(General *general,Measurement *meas,Event *event,
       exit(1);
    }
 
-   det_dist = meas->det_dist/C_MM;
-   
    while(fgets(buf,NLINE,fp) != NULL && cont){
       c = sscanf(buf,"%lf %lf %lf %i %lf %s %lf %i",
                  &x,&y,&E,&Z,&M,type,&w,&n);

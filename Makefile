@@ -1,20 +1,10 @@
-INSTALLDIR = ../Potku-bin
-DATADIR    = ../Potku-data
-LIBDIR     = ../Potku-lib
-INCDIR     = ../Potku-include
-
 CC = gcc
-CFLAGS = -g -Wall -Wmissing-prototypes # -DDEBUG
-#CFLAGS += -I${PWD}/$(INCDIR) -DDATAPATH=${PWD}/$(DATADIR)
-CFLAGS += -I$(INCDIR) -DDATAPATH=$(DATADIR)
+CFLAGS = -g -Wall # -DDEBUG
+CFLAGS += `pkg-config --cflags jibal`
 
-# CFLAGS= -Wall -O2 -fomit-frame-pointer
-# CFLAGS= -O6 -mcpu=pentiumpro -funroll-loops -ffast-math -malign-double -fomit-frame-pointer
+LIB=`pkg-config --libs jibal`
 
-LIB= -lm
-LIB+= -lgsto
-
-LDFLAGS = -g -L$(LIBDIR)
+LDFLAGS = -g
 
 OBJS = erd_depth.o
 
@@ -27,9 +17,5 @@ clean:
 	rm -f $(OBJS) $(PROG) .depend
 
 depend .depend:
-	$(CC) -I$(INCDIR) -MM *.c > .depend
+	$(CC) $(CFLAGS) -MM *.c > .depend
 include .depend
-
-install:
-	install -d $(INSTALLDIR) 
-	install $(PROG) $(INSTALLDIR)
