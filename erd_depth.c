@@ -5,9 +5,9 @@
 #include <math.h>
 
 
+#include <jibal.h>
+#include <jibal_stop.h>
 #include <jibal_gsto.h>
-
-#include <jibal_units.h>
 
 #define NLINE 200
 #define NAMELEN 1000 /* This is the maximum length for a filename. FIXME: Dynamic length! */
@@ -114,6 +114,7 @@ typedef struct {
 } Measurement;
 
 typedef struct {
+    jibal jibal;
    char eventfile[NAMELEN];
    char setupfile[NAMELEN];
    int nevents;
@@ -164,7 +165,6 @@ void read_setup(General *,Measurement *,Concentration *);
 void read_events(General *,Measurement *,Event *,Concentration *);
 char *read_inputline(char *,int);
 void file_error(char *,int);
-int get_nuclide(char *,int *,int *,double *);
 double ipow(double,int);
 double ipow2(double);
 void calculate_stoppings(General *, Measurement *, Stopping *);
@@ -196,6 +196,14 @@ int main(int argc,char *argv[])
    Event *event;
    Measurement meas;
    int i;
+    for(i=0; i < argc; i++) {
+        fprintf(stderr, "%s%s", argv[i], i<argc-1?" ":"\n");
+    }
+    general.jibal=jibal_init(NULL);
+    if(general.jibal.error) {
+        fprintf(stderr, "Initializing JIBAL failed with error code: %i (%s)\n", general.jibal.error, jibal_error_string(general.jibal.error));
+        return EXIT_FAILURE;
+    }
    event=(Event *) malloc(MAXEVENTS*sizeof(Event));
    read_command_line(argc,argv,&general);
    read_setup(&general,&meas,&conc);
@@ -224,13 +232,14 @@ int main(int argc,char *argv[])
    }
 
    output(&general,&conc,event);
-
+    jibal_free(&general.jibal);
    exit(0);
 }
 
 int allocate_general_sto_conc(General *general, Measurement *meas, Stopping *sto, Concentration *conc) {
     int i;
     fprintf(stderr, "Allocating stuff. %i %i %i\n", general->maxelements, general->maxnucmasses, general->maxdstep);
+    /* TODO: this is horrible allocation hell, originally these were statically allocated, but this isn't exactly pretty */
     general->element = (int *) calloc(general->maxelements, sizeof(int));
     general->element[meas->Z] ++;
     general->nuclide = (int **) calloc(general->maxelements, sizeof(int *));
@@ -361,7 +370,7 @@ void output(General *general,Concentration *conc,Event *event)
                   sprintf(fnuc,"%i",ia2);
                   strcat(fname,fnuc);
                }
-               strcat(fname,get_symbol(iz2));
+               strcat(fname,general->jibal.elements[iz2].name);
                fp = fopen(fname,"w");
                if(fp == NULL){
                   fprintf(stderr,"Could not open file %s\n for writing",fname);
@@ -615,8 +624,7 @@ double mc2lab_scatc(double mcs,double tcm,double t)
    return(value);
 }
 
-void calculate_primary_energy(General *general,Measurement *meas,Stopping *sto,
-                              Concentration *conc)
+void calculate_primary_energy(General *general,Measurement *meas,Stopping *sto, Concentration *conc)
 {
    double E,Emin,dmult,d,dstep;
    int id=0;
@@ -706,8 +714,7 @@ double inter_sto(General *general, int z1,double v,double d,Stopping *sto)
    return(value);
   
 }
-void create_conc_profile(General *general,Measurement *meas,
-                         Stopping *sto,Concentration *conc)
+void create_conc_profile(General *general, Measurement *meas, Stopping *sto, Concentration *conc)
 {
    double d=0.0,**p;
    int iz1,iz2,id,iv,minn,n,nsum;
@@ -769,8 +776,7 @@ void create_conc_profile(General *general,Measurement *meas,
             if(general->element[iz2] > 0){
                for(id=0;id<general->maxdstep;id++)
                   for(iv=0;iv<sto->vsteps;iv++)
-                     sto->sum[iz1][iv][id] += 
-                          conc->w[iz2][id]*sto->ele[iz1][iz2][iv];
+                     sto->sum[iz1][iv][id] += conc->w[iz2][id]*sto->ele[iz1][iz2][iv];
             }
                
       }   
@@ -815,15 +821,14 @@ void clear_conc(General *general, Concentration *conc)
 void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
     int z1, z2;
     int s;
-    jibal_gsto *gsto_workspace;
     for(z1=1;z1<general->maxelements;z1++){
         sto->sum[z1] = NULL;
         for(z2=1;z2<general->maxelements;z2++){      
             sto->ele[z1][z2] = NULL;
         }
     }
-    gsto_workspace=jibal_gsto_init(general->maxelements, XSTR(STOPPING_DATA));
-    if(!gsto_workspace) {
+    jibal_gsto *gsto = general->jibal.gsto;
+    if(!gsto) {
         fprintf(stderr, "Could not init stopping table.\n");
         return;
     }
@@ -831,28 +836,35 @@ void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
     for(z1=0;z1<general->maxelements;z1++){
              for(z2=0;z2<general->maxelements;z2++){
                 if(general->element[z1] > 0 && general->element[z2]>0) {
-                    jibal_gsto_auto_assign(gsto_workspace, z1, z2);
+                    jibal_gsto_auto_assign(gsto, z1, z2);
                 }
              }
     }
-    if(!jibal_gsto_load(gsto_workspace)) {
+    if(!jibal_gsto_load_all(gsto)) {
         fprintf(stderr, "Error in loading stopping.\n");
         return;
     }
-    gsto_print_assignments(gsto_workspace);
+    jibal_gsto_print_assignments(gsto);
     
     general->vmax *= 1.2;
     sto->vstep = general->vmax/(sto->vsteps - 1.0);
     sto->vdiv = 1.0/sto->vstep;
-    
+    int i;
     for(z1=0;z1<general->maxelements;z1++){
         for(z2=0;z2<general->maxelements;z2++){
             if(general->element[z1] > 0 && general->element[z2]>0) {
-                sto->ele[z1][z2]=jibal_gsto_sto_v_table(gsto_workspace, z1, z2, 0, general->vmax, sto->vsteps); /* 0 as a v_min, does it give any trouble? */
+                sto->ele[z1][z2] = malloc(sto->vsteps*sizeof(double));
+                double avgmass = general->jibal.elements[z2].avg_mass;
+                fprintf(stderr, "Assuming mass %g of element %i for nuclear stopping (%i in %i).\n", avgmass/C_U, z2, z1, z2);
+                for(i=0; i < sto->vsteps; i++) {
+                    double v = i*sto->vstep;
+                    double em = energy_per_mass(v);
+                    sto->ele[z1][z2][i] = jibal_gsto_stop_em(gsto, z1, z2, em) +
+                            jibal_gsto_stop_nuclear_universal(em * meas->M, z1, meas->M, z2, avgmass);
+                }
             }
         }
     }
-    jibal_gsto_free(gsto_workspace);
 }
 
 void read_command_line(int argc,char *argv[],General *general)
@@ -872,6 +884,16 @@ void read_command_line(int argc,char *argv[],General *general)
       strcpy(general->eventfile,argv[3]);
    else
       strcpy(general->eventfile,"-");
+}
+
+int get_nuclide(const jibal_isotope *isotopes, Measurement *meas, const char *nuc) {
+    const jibal_isotope *isotope = jibal_isotope_find(isotopes, nuc, 0, 0);
+    if(!isotope)
+        return 0;
+    meas->Z = isotope->Z;
+    meas->A = isotope->A;
+    meas->M = isotope->mass;
+    return 1;
 }
 
 void read_setup(General *general,Measurement *meas,Concentration *conc)
@@ -906,7 +928,7 @@ void read_setup(General *general,Measurement *meas,Concentration *conc)
          c = sscanf(value,"%s",beam);
          if(c != 1)
             file_error(general->setupfile,i+1);
-         c = get_nuclide(beam,&(meas->Z),&(meas->A),&(meas->M));
+         c = get_nuclide(general->jibal.isotopes, meas, beam);
          if(!c){
             fprintf(stderr,"Nuclide not found for projectile %s\n",beam);
          }
@@ -1086,65 +1108,7 @@ void read_events(General *general,Measurement *meas,Event *event,
    fprintf(stderr,"%i events read\n",general->nevents);
    
 }
-int get_nuclide(char *symbol,int *Z,int *A,double *M)
-{
-   FILE *fp;
-   char S0[NELESYM];
-   double M0,C0,maxC=0.0;
-   int c=0,len,N0,Z0,A0,cont=TRUE;
-   
-   len = strlen(symbol);
-   
-   fp = fopen(XSTR(F_MASSES),"r");
-   
-   if(fp == NULL){
-      fprintf(stderr,"Could not open mass file %s\n",XSTR(F_MASSES));
-      exit(4);
-   }
-   
-   while(isdigit(symbol[c]) && c < len)
-      c++;
-  
-   if(c == len){
-      fprintf(stderr,"Only digits in nuclide symbol %s\n",symbol);
-      exit(5);
-   }
 
-   if(c > 0){
-      *A = atoi(symbol);
-      symbol += c;
-   } else
-      *A = 0;
-               
-   while(cont){
-      c = fscanf(fp,"%i %i %i %s %lf %lf\n",&N0,&Z0,&A0,S0,&M0,&C0);
-      if(c == 6){
-         if(*A > 0){
-            if(strcmp(symbol,S0) == 0 && *A == A0){
-               *Z = Z0;
-               *M = M0*1e-6*C_U;
-               cont = FALSE;
-            }
-         } else {
-            if(strcmp(symbol,S0) == 0 && C0 > maxC){
-               *Z = Z0;
-               *A = A0;
-               *M = M0*1e-6*C_U;
-               maxC = C0;
-            }
-         }
-      } else 
-         cont = FALSE;
-   }
-   
-   fclose(fp);                    
-
-   if(c == EOF)
-      return(FALSE);
-   else
-      return(TRUE);
- 
-}
 double ipow2(double x)
 {
    return(x*x);
