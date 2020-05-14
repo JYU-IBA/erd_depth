@@ -372,6 +372,7 @@ void output(General *general,Concentration *conc,Event *event)
                }
                strcat(fname,general->jibal.elements[iz2].name);
                fp = fopen(fname,"w");
+               fprintf(stderr, "Writing output to file %s\n", fname);
                if(fp == NULL){
                   fprintf(stderr,"Could not open file %s\n for writing",fname);
                   exit(6);
@@ -854,13 +855,21 @@ void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
         for(z2=0;z2<general->maxelements;z2++){
             if(general->element[z1] > 0 && general->element[z2]>0) {
                 sto->ele[z1][z2] = malloc(sto->vsteps*sizeof(double));
-                double avgmass = general->jibal.elements[z2].avg_mass;
-                fprintf(stderr, "Assuming mass %g of element %i for nuclear stopping (%i in %i).\n", avgmass/C_U, z2, z1, z2);
+                double avgmass1 = general->jibal.elements[z1].avg_mass; /* TODO: this is an approximation. not the worst possible. */
+                double avgmass2 = general->jibal.elements[z2].avg_mass;
+                if(avgmass1 <= 0.0 || avgmass2 <= 0.0) {
+                    fprintf(stderr, "WARNING: No average mass for element %i or %i. Ignoring nuclear stopping for %i in %i.\n", z1, z2, z1, z2);
+                }
+#ifdef DEBUG
+                fprintf(stderr, "Assuming mass %g of element %i  and mass %g of element %i for nuclear stopping (%i in %i).\n", avgmass1/C_U, z1, avgmass2/C_U,  z2, z1, z2);
+#endif
                 for(i=0; i < sto->vsteps; i++) {
                     double v = i*sto->vstep;
                     double em = energy_per_mass(v);
-                    sto->ele[z1][z2][i] = jibal_gsto_stop_em(gsto, z1, z2, em) +
-                            jibal_gsto_stop_nuclear_universal(em * meas->M, z1, meas->M, z2, avgmass);
+                    sto->ele[z1][z2][i] = jibal_gsto_stop_em(gsto, z1, z2, em);
+                    if(avgmass1 > 0.0 && avgmass2 > 0.0) {
+                        sto->ele[z1][z2][i] += jibal_gsto_stop_nuclear_universal(em * avgmass1, z1, avgmass1, z2, avgmass2);
+                    }
                 }
             }
         }
