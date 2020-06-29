@@ -8,6 +8,7 @@
 #include <jibal.h>
 #include <jibal_stop.h>
 #include <jibal_gsto.h>
+#include <jibal_cs.h>
 
 #define NLINE 200
 #define NAMELEN 1000 /* This is the maximum length for a filename. FIXME: Dynamic length! */
@@ -97,7 +98,7 @@ typedef struct {
 } Measurement;
 
 typedef struct {
-    jibal jibal;
+    jibal *jibal;
     char eventfile[NAMELEN];
     char setupfile[NAMELEN];
     int nevents;
@@ -182,9 +183,9 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "%s%s", argv[i], i < argc - 1 ? " " : "\n");
     }
     general.jibal = jibal_init(NULL);
-    if (general.jibal.error) {
-        fprintf(stderr, "Initializing JIBAL failed with error code: %i (%s)\n", general.jibal.error,
-                jibal_error_string(general.jibal.error));
+    if (general.jibal->error) {
+        fprintf(stderr, "Initializing JIBAL failed with error code: %i (%s)\n", general.jibal->error,
+                jibal_error_string(general.jibal->error));
         return EXIT_FAILURE;
     }
     event = (Event *) malloc(MAXEVENTS * sizeof(Event));
@@ -215,7 +216,7 @@ int main(int argc, char *argv[]) {
     }
 
     output(&general, &conc, event);
-    jibal_free(&general.jibal);
+    jibal_free(general.jibal);
     exit(0);
 }
 
@@ -352,7 +353,7 @@ void output(General *general, Concentration *conc, Event *event) {
                         sprintf(fnuc, "%i", ia2);
                         strcat(fname, fnuc);
                     }
-                    strcat(fname, general->jibal.elements[iz2].name);
+                    strcat(fname, general->jibal->elements[iz2].name);
                     fp = fopen(fname, "w");
                     fprintf(stderr, "Writing output to file %s\n", fname);
                     if (fp == NULL) {
@@ -810,7 +811,7 @@ void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
             sto->ele[z1][z2] = NULL;
         }
     }
-    jibal_gsto *gsto = general->jibal.gsto;
+    jibal_gsto *gsto = general->jibal->gsto;
     if (!gsto) {
         fprintf(stderr, "Could not init stopping table.\n");
         return;
@@ -837,8 +838,8 @@ void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
         for (z2 = 0; z2 < general->maxelements; z2++) {
             if (general->element[z1] > 0 && general->element[z2] > 0) {
                 sto->ele[z1][z2] = malloc(sto->vsteps * sizeof(double));
-                double avgmass1 = general->jibal.elements[z1].avg_mass; /* TODO: this is an approximation. not the worst possible. */
-                double avgmass2 = general->jibal.elements[z2].avg_mass;
+                double avgmass1 = general->jibal->elements[z1].avg_mass; /* TODO: this is an approximation. not the worst possible. */
+                double avgmass2 = general->jibal->elements[z2].avg_mass;
                 if (avgmass1 <= 0.0 || avgmass2 <= 0.0) {
                     fprintf(stderr,
                             "WARNING: No average mass for element %i or %i. Ignoring nuclear stopping for %i in %i.\n",
@@ -920,7 +921,7 @@ void read_setup(General *general, Measurement *meas, Concentration *conc) {
             c = sscanf(value, "%s", beam);
             if (c != 1)
                 file_error(general->setupfile, i + 1);
-            c = get_nuclide(general->jibal.isotopes, meas, beam);
+            c = get_nuclide(general->jibal->isotopes, meas, beam);
             if (!c) {
                 fprintf(stderr, "Nuclide not found for projectile %s\n", beam);
             }
