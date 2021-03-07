@@ -9,7 +9,7 @@ set(CMAKE_REQUIRED_LIBRARIES "m")
 
 set(CMAKE_C_STANDARD 99)
 
-find_package(Jibal 0.2.6 REQUIRED)
+find_package(Jibal 0.3.0 REQUIRED)
 if(Jibal_FOUND)
     message(STATUS "JIBAL ${Jibal_VERSION} headers found at ${Jibal_INCLUDE_DIR}")
 endif()
@@ -22,7 +22,7 @@ target_include_directories(erd_depth PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>) #Because of erd_depth_config.h
 
 target_link_libraries(erd_depth 
-    PRIVATE Jibal 
+    PRIVATE jibal
     PRIVATE "$<$<BOOL:${UNIX}>:m>"
     )
 

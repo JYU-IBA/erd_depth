@@ -1,6 +1,6 @@
-#define erd_depth_VERSION "@erd_depth_VERSION@"
-#define erd_depth_VERSION_MAJOR @erd_depth_VERSION_MAJOR@
-#define erd_depth_VERSION_MINOR @erd_depth_VERSION_MINOR@
-#define erd_depth_VERSION_PATCH @erd_depth_VERSION_PATCH@
+#define ERD_DEPTH_VERSION "@erd_depth_VERSION@"
+#define ERD_DEPTH_VERSION_MAJOR @erd_depth_VERSION_MAJOR@
+#define ERD_DEPTH_VERSION_MINOR @erd_depth_VERSION_MINOR@
+#define ERD_DEPTH_VERSION_PATCH @erd_depth_VERSION_PATCH@
 
-#define erd_depth_DESCRIPTION "@erd_depth_DESCRIPTION@"
+#define ERD_DEPTH_DESCRIPTION "@erd_depth_DESCRIPTION@"

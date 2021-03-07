@@ -850,7 +850,7 @@ void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
 #endif
                 for (i = 0; i < sto->vsteps; i++) {
                     double v = i * sto->vstep;
-                    double em = energy_per_mass(v);
+                    double em = jibal_energy_per_mass(v);
                     sto->ele[z1][z2][i] = jibal_gsto_stop_em(gsto, z1, z2, em);
                     if (avgmass1 > 0.0 && avgmass2 > 0.0) {
                         sto->ele[z1][z2][i] += jibal_gsto_stop_nuclear_universal(em * avgmass1, z1, avgmass1, z2,
