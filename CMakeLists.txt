@@ -9,10 +9,11 @@ set(CMAKE_REQUIRED_LIBRARIES "m")
 
 set(CMAKE_C_STANDARD 99)
 
-find_package(Jibal 0.3.0 REQUIRED)
+find_package(Jibal 0.3.11 REQUIRED)
 if(Jibal_FOUND)
     message(STATUS "JIBAL ${Jibal_VERSION} headers found at ${Jibal_INCLUDE_DIR}")
 endif()
+find_package(OpenMP)
 
 configure_file(erd_depth_config.h.in erd_depth_config.h @ONLY)
 
@@ -26,6 +27,9 @@ target_link_libraries(erd_depth
     PRIVATE "$<$<BOOL:${UNIX}>:m>"
     )
 
+if(OpenMP_C_FOUND)
+    target_link_libraries(erd_depth PUBLIC OpenMP::OpenMP_C)
+endif()
 
 INSTALL(TARGETS erd_depth
         RUNTIME DESTINATION bin)

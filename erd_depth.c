@@ -20,7 +20,8 @@
 #define MAXEVENTS 10000000
 #define MAXVSTEP 201
 #define MAXDSTEP 201 /* Default for general->maxdstep */
-#define MAXSTOCHANGE 0.05
+#define MAXSTOCHANGE 0.02
+#define PARALLEL_EVENTS (5000)
 
 
 #define TRUE  1
@@ -43,7 +44,7 @@
 #define F_MASSES DATAPATH/masses.dat
 #define NITER 4
 
-#define NABOVE 10    /* Output steps above the surface */
+#define NABOVE 20    /* Output steps above the surface */
 #define WSCALE 4.0   /* change of the total conc (sigma) to stop scaling */
 
 #define max(A, B)  (((A) > (B)) ? (A) : (B))
@@ -86,6 +87,7 @@ typedef struct {
     double w0;
     double w;
     double d;
+    int id;
 } Event;
 
 typedef struct {
@@ -150,7 +152,6 @@ void read_events(General *, Measurement *, Event *, Concentration *);
 char *read_inputline(char *, int);
 void file_error(char *, int);
 double ipow(double, int);
-double ipow2(double);
 void calculate_stoppings(General *, Measurement *, Stopping *);
 void create_sumsto(void);
 void create_conc_profile(General *, Measurement *, Stopping *,
@@ -171,6 +172,11 @@ double Srbs(int, double, int, double, double, double, enum cross_section);
 double Srbs_mc(double, double, double, double);
 double mc2lab_scatc(double, double, double);
 int allocate_general_sto_conc(General *, Measurement *, Stopping *, Concentration *);
+
+inline double ipow2(double x) {
+    return (x * x);
+}
+
 
 int main(int argc, char *argv[]) {
     General general;
@@ -453,19 +459,20 @@ char *get_symbol(int z) {
 
 void calculate_recoil_depths(General *general, Measurement *meas, Event *event,
                              Stopping *sto, Concentration *conc) {
-    double K, dmult, recE, beamE, d, dstep, M, dE = 0, w, bk, rk;
-    int Z, id, ie;
 
-    for (ie = 0; ie < general->nevents; ie++) {
+#pragma omp parallel default(none) shared(general, meas, event, sto, conc)
+#pragma omp for schedule(static, PARALLEL_EVENTS)
+    for (int ie = 0; ie < general->nevents; ie++) {
+        double K, dmult, recE, beamE, d, dstep, M, dE = 0, w, bk, rk;
+        int Z, id;
         Z = event[ie].Z;
         M = event[ie].M;
-
         dmult = 1.0 / sin(event[ie].theta - meas->target_angle);
 
-        if (event[ie].type == ERD)
+        if (event[ie].type == ERD) {
             K = (4.0 * meas->M * event[ie].M * ipow2(cos(event[ie].theta))) /
                 ipow2(meas->M + event[ie].M);
-        else {   /* RBS */
+        } else {   /* RBS */
             K = sqrt(ipow2(event[ie].M) - ipow2(meas->M * sin(event[ie].theta)));
             K += meas->M * cos(event[ie].theta);
             K /= (meas->M + event[ie].M);
@@ -523,18 +530,29 @@ void calculate_recoil_depths(General *general, Measurement *meas, Event *event,
             printf("W %i %10.4f %10.4f\n",event[ie].type,w/C_BARN,beamE/C_MEV);
             printf("%3i %14.5e %14.5e\n",Z,(event[ie].d*C_CM2)/1.0e15,event[ie].w);
 #endif
-            if (event[ie].d < 0.0)
-                id = 0.0;
-            else
-                id = (int) (event[ie].d / conc->dstep);
+        } else {
+            event[ie].w = 0.0;
+        }
+    }
+    int n = 0;
+    for (int ie = 0; ie < general->nevents; ie++) {
+        int id;
+        int Z = event[ie].Z;
+        if(event[ie].d < 0.0) {
+            id = 0;
+        } else {
+            id = (int) (event[ie].d / conc->dstep);
+        }
+        if(id >= general->maxdstep) {
+            continue;
+        }
+        if(event[ie].w > 0.0) {
             conc->w[Z][id] += event[ie].w;
             conc->n[Z][id]++;
             conc->wsum[id] += event[ie].w;
             conc->nsum[id]++;
-        } else {
-            event[ie].w = 0.0;
+            n++;
         }
-
     }
 }
 
@@ -829,7 +847,7 @@ void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
         return;
     }
     jibal_gsto_print_assignments(gsto);
-
+    jibal_gsto_print_files(gsto, 1);
     general->vmax *= 1.2;
     sto->vstep = general->vmax / (sto->vsteps - 1.0);
     sto->vdiv = 1.0 / sto->vstep;
@@ -853,8 +871,7 @@ void calculate_stoppings(General *general, Measurement *meas, Stopping *sto) {
                     double em = jibal_energy_per_mass(v);
                     sto->ele[z1][z2][i] = jibal_gsto_stop_em(gsto, z1, z2, em);
                     if (avgmass1 > 0.0 && avgmass2 > 0.0) {
-                        sto->ele[z1][z2][i] += jibal_gsto_stop_nuclear_universal(em * avgmass1, z1, avgmass1, z2,
-                                                                                 avgmass2);
+                        sto->ele[z1][z2][i] += jibal_gsto_stop_nuclear_universal(em * avgmass1, z1, avgmass1, z2, avgmass2);
                     }
                 }
             }
@@ -1047,7 +1064,7 @@ void read_events(General *general, Measurement *meas, Event *event,
             fprintf(stderr, "Problems at input line %i\n", i + 1);
         }
         if (i < MAXEVENTS) {
-            event[i].theta = meas->detector_angle + x;
+            event[i].theta = meas->detector_angle + (x / 1000.0);
             event[i].fii = y;
             event[i].E = E * C_MEV;
             event[i].Z = Z;
@@ -1099,10 +1116,6 @@ void read_events(General *general, Measurement *meas, Event *event,
 
     fprintf(stderr, "%i events read\n", general->nevents);
 
-}
-
-double ipow2(double x) {
-    return (x * x);
 }
 
 double ipow(double x, int a) {
