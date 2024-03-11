@@ -82,13 +82,14 @@ int cutfile_read_headers(cutfile *cutfile) {
     char *line = NULL, *line_data;
     size_t line_size = 0;
     FILE *f = fopen(cutfile->filename, "r");
+    int lineno = 0;
     if(!f) {
         tofe_list_msg(TOFE_LIST_ERROR, "Could not open file \"%s\"", cutfile->filename);
         return -1;
     }
     int error = 0;
     while(getline(&line, &line_size, f) > 0) {
-        cutfile->lineno++;
+        lineno++;
         if(*line == '#') /* Comments are allowed */
             continue;
         if(*line == '\r' || *line == '\n') { /* Empty line signals end of headers */
@@ -99,14 +100,14 @@ int cutfile_read_headers(cutfile *cutfile) {
         strsep(&line_data, ":");
         if(line_data == NULL) { /* No argument, ignore */
             tofe_list_msg(TOFE_LIST_ERROR, "File %s line %i: \"%s\", no argument or separator ':'.", cutfile->filename,
-                          cutfile->lineno, line);
+                          lineno, line);
             error++;
             break;
         }
         while(*(line_data) == ' ') { line_data++; }
         if(*line_data == '\0') {
             tofe_list_msg(TOFE_LIST_WARNING, "File %s line %i: \"%s\", argument is empty.", cutfile->filename,
-                          cutfile->lineno, line);
+                          lineno, line);
             continue;
         }
         //fprintf(stderr, "%i: \"%s\" and \"%s\"\n", cutfile->lineno, line, line_data);
@@ -137,9 +138,12 @@ int cutfile_read_headers(cutfile *cutfile) {
             case CUTFILE_HEADER_SPLIT:
                 break;
             default:
-                tofe_list_msg(TOFE_LIST_WARNING, "File %s line %i: unknown header \"%s\"", cutfile->filename, cutfile->lineno, line);
+                tofe_list_msg(TOFE_LIST_WARNING, "File %s line %i: unknown header \"%s\"", cutfile->filename, lineno, line);
+                break;
         }
     }
+    free(line);
+    cutfile->header_lines = lineno;
     fclose(f);
     return error;
 }
@@ -156,6 +160,53 @@ void cutfile_free(cutfile *cutfile) {
     free(cutfile->filename);
     free(cutfile->basename);
     jibal_element_free(cutfile->element);
+}
+
+int cutfile_convert(FILE *out, const cutfile *cutfile) {
+    /* Load stopping of recoils/scattered ions in carbon foil */
+    /* Load relevant efficiency file */
+    /* Skip headers */
+    /* Convert ToF to E and add back energy lost in foil */
+    /* Convert position coordinate to angle */
+    /* Create properly formatted output */
+    /* Check that number of events matches with the header */
+    FILE *in = fopen(cutfile->filename, "r");
+    if(!in) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not open file \"%s\" (reading for conversion)!\n", cutfile->filename);
+        return -1;
+    }
+    char *line = NULL;
+    size_t line_size = 0;
+    int lineno = 0;
+    int Z = cutfile->element->Z;
+    double mass = cutfile->element->avg_mass / C_U;
+    double weight_cutfile = cutfile->event_weight;
+    const char *type_str = tofe_scatter_types[cutfile->type].s;
+    while(getline(&line, &line_size, in) > 0) {
+        lineno++;
+        if(lineno <= cutfile->header_lines) {
+            continue;
+        }
+        if(strncmp(line, "ToF, Energy, Event number", 25) == 0) { /* TODO: this is for backward compatibility, consider removing! */
+            continue;
+        }
+        int tof, e, ang1, evnum;
+        if(sscanf(line, "%i %i %i %i", &tof, &e, &ang1, &evnum) == 4) {
+            //angle1=ang1*input.acalib1+input.acalib2;
+        } else if(sscanf(line, "%i %i %i", &tof, &e, &evnum) == 3) {
+            //angle1=0.0;
+        } else {
+            tofe_list_msg(TOFE_LIST_ERROR, "Error in scanning input file %s on line %i: %s", cutfile->filename, lineno, line);
+            break;
+        }
+
+        double weight = weight_cutfile; /* TODO: efficiency correction */
+        double energy = 1.0; /* TODO: energy conversion (+ stopping) */
+        //0.000000e+00 0.000000e+00    2.98967  14  28.0855 ERD  1.000 947984
+        fprintf(out, "%12e %12e %8.5lf %3i %8.4lf %4s %.5lf %i\n", 0.0, 0.0, 1.0, Z, mass, type_str, weight, evnum);
+    }
+    fclose(in);
+    return 0;
 }
 
 list_files *tofe_files_from_argv(jibal *jibal, int argc, char **argv) { /* Argument vector should contain filenames. Reads headers, closes files. */
@@ -225,17 +276,22 @@ void tofe_files_print(list_files *files) {
     if(!files) {
         return;
     }
-    fprintf(stderr, "%32s | type |   A |   Z |    mass | weight |       N\n", "filename");
+    fprintf(stderr, "%32s | type |   A |   Z |    mass | weight | head |   counts\n", "filename");
     for(size_t i = 0; i < files->n_files; i++) {
         cutfile *cutfile = &files->cutfiles[i];
-        fprintf(stderr, "%32s | %4s | %3i | %3i | %7.4lf | %6.3lf | %8zu\n",
+        fprintf(stderr, "%32s | %4s | %3i | %3i | %7.4lf | %6.3lf | %4i | %8zu\n",
                 cutfile->basename, tofe_scatter_types[cutfile->type].s, cutfile->A,
                 cutfile->element->Z,  cutfile->element->avg_mass / C_U,
-                cutfile->event_weight, cutfile->n_counts);
+                cutfile->event_weight, cutfile->header_lines, cutfile->n_counts);
     }
 }
 
-
+int tofe_files_convert(list_files *files) {
+    for(size_t i = 0; i < files->n_files; i++) {
+        cutfile_convert(stdout, &files->cutfiles[i]);
+    }
+    return 0;
+}
 
 int main(int argc, char **argv) {
 #if 0
@@ -255,6 +311,7 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
     tofe_files_print(files);
+    tofe_files_convert(files);
     tofe_files_free(files);
     jibal_free(jibal);
     return EXIT_SUCCESS;

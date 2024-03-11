@@ -34,7 +34,7 @@ typedef struct cutfile {
     double beam_energy;
     jibal_isotope *incident;
     double event_weight;
-    int lineno;
+    int header_lines;
     int A; /* mass number, A = 0 for a natural element of target element (in sample), will be used to parse element below */
     char *element_str; /* element string, will be used to parse element below */
     jibal_element *element; /* parsed element, contains all isotopes with relevant concentrations */
@@ -84,7 +84,9 @@ int cutfile_parse_filename(cutfile *cutfile);
 int cutfile_read_headers(cutfile *cutfile);
 void cutfile_reset(cutfile *cutfile);
 void cutfile_free(cutfile *cutfile);
+int cutfile_convert(FILE *out, const cutfile *cutfile);
 list_files *tofe_files_from_argv(jibal *jibal, int argc, char **argv);
 char *tofe_basename(const char *path);
 void tofe_files_print(list_files *files);
+int tofe_files_convert(list_files *files);
 #endif //TOFE_LIST_H
