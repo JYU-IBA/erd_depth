@@ -49,6 +49,35 @@ void tofe_files_free(list_files *files) {
     free(files);
 }
 
+int cutfile_parse_filename(cutfile *cutfile) {
+    cutfile->basename = tofe_basename(cutfile->filename);
+    if(!cutfile->basename) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not parse filename \"%s\"\n", cutfile->filename);
+        return -1;
+    }
+    char *ext = cutfile->basename + strcspn(cutfile->basename, "."); /* all extensions, i.e. string after first occurence of '.' */
+    if(*ext != '\0') {
+        ext++;
+        char *nuclide = strdup(ext);
+        nuclide[strcspn(nuclide, ".")] = 0; /* Replaces first occurence of '.' with '\0', terminating the string, i.e. we extract foo from blabla.foo.blabla... */
+        char *element;
+        cutfile->A = strtol(nuclide, &element, 10);
+        if(cutfile->A < 0 || cutfile->A > 300) {
+            tofe_list_msg(TOFE_LIST_ERROR, "Mass number out of range or conversion error with \"%s\"\n", nuclide);
+            return -1;
+        }
+        if(*element != '\0') {
+            free(cutfile->element_str);
+            cutfile->element_str = strdup(element); /* Will be parsed later */
+        } else {
+            tofe_list_msg(TOFE_LIST_ERROR, "Could not parse element from filename \"%s\"", cutfile->filename);
+            return -1;
+        }
+        free(nuclide);
+    }
+    return 0;
+}
+
 int cutfile_read_headers(cutfile *cutfile) {
     char *line = NULL, *line_data;
     size_t line_size = 0;
@@ -57,7 +86,6 @@ int cutfile_read_headers(cutfile *cutfile) {
         tofe_list_msg(TOFE_LIST_ERROR, "Could not open file \"%s\"", cutfile->filename);
         return -1;
     }
-    cutfile->basename = tofe_basename(cutfile->filename);
     int error = 0;
     while(getline(&line, &line_size, f) > 0) {
         cutfile->lineno++;
@@ -127,9 +155,10 @@ void cutfile_reset(cutfile *cutfile) {
 void cutfile_free(cutfile *cutfile) {
     free(cutfile->filename);
     free(cutfile->basename);
+    jibal_element_free(cutfile->element);
 }
 
-list_files *tofe_files_from_argv(int argc, char **argv) { /* Argument vector should contain filenames. Reads headers, closes files. */
+list_files *tofe_files_from_argv(jibal *jibal, int argc, char **argv) { /* Argument vector should contain filenames. Reads headers, closes files. */
     if(argc == 0 || argv == NULL) {
         tofe_list_msg(TOFE_LIST_ERROR, "No files.");
         return NULL;
@@ -137,15 +166,34 @@ list_files *tofe_files_from_argv(int argc, char **argv) { /* Argument vector sho
     list_files *files = malloc(sizeof(list_files));
     files->n_files = argc;
     files->cutfiles = calloc(files->n_files, sizeof(cutfile));
+    int error = 0;
     for(int i = 0; i < argc; i++) {
         cutfile *cutfile = &files->cutfiles[i];
         cutfile_reset(cutfile);
         cutfile->filename = strdup(argv[i]);
-        if(cutfile_read_headers(cutfile)) { /* Encountered some error, cleanup and return */
-            tofe_files_free(files);
-            files = NULL;
+        if(cutfile_parse_filename(cutfile)) {
+            error = 1;
             break;
         }
+        if(cutfile_read_headers(cutfile)) { /* Encountered some error, cleanup and return */
+            error = 1;
+            break;
+        }
+        if(!cutfile->element_str) {
+            tofe_list_msg(TOFE_LIST_ERROR, "No element could be determined from filename \"%s\"", cutfile->filename);
+        }
+        const jibal_element *element = jibal_element_find(jibal->elements, cutfile->element_str);
+        if(!element) {
+            tofe_list_msg(TOFE_LIST_ERROR, "File %s: element \"%s\" not found", cutfile->filename, cutfile->element_str) ;
+        }
+        cutfile->element = jibal_element_copy(element, cutfile->A);
+        if(!cutfile->element) {
+            tofe_list_msg(TOFE_LIST_ERROR, "File %s: element %s, Z = %i with A = %i could not be created (JIBAL issue?).", cutfile->filename, element->name, cutfile->A); ;
+        }
+    }
+    if(error) {
+        tofe_files_free(files);
+        return NULL;
     }
     return files;
 }
@@ -165,7 +213,10 @@ char *tofe_basename(const char *path) { /*  e.g. /bla/bla/tofe2363.O.ERD.0.cut =
     return out;
 #else
     char *bname = malloc(MAXPATHLEN);
-    basename_r(path, bname);
+    if(!basename_r(path, bname)) {
+        free(bname);
+        return NULL;
+    }
     return bname;
 #endif
 }
@@ -174,9 +225,13 @@ void tofe_files_print(list_files *files) {
     if(!files) {
         return;
     }
+    fprintf(stderr, "%32s | type |   A |   Z |    mass | weight |       N\n", "filename");
     for(size_t i = 0; i < files->n_files; i++) {
         cutfile *cutfile = &files->cutfiles[i];
-        fprintf(stderr, "%32s | %3s | %7.4lf | %8zu\n", cutfile->basename, tofe_scatter_types[cutfile->type].s, cutfile->event_weight, cutfile->n_counts);
+        fprintf(stderr, "%32s | %4s | %3i | %3i | %7.4lf | %6.3lf | %8zu\n",
+                cutfile->basename, tofe_scatter_types[cutfile->type].s, cutfile->A,
+                cutfile->element->Z,  cutfile->element->avg_mass / C_U,
+                cutfile->event_weight, cutfile->n_counts);
     }
 }
 
@@ -194,11 +249,13 @@ int main(int argc, char **argv) {
     }
     argc--;
     argv++;
-    list_files *files = tofe_files_from_argv(argc, argv);
+    jibal *jibal = jibal_init(NULL);
+    list_files *files = tofe_files_from_argv(jibal, argc, argv);
     if(!files) {
         return EXIT_FAILURE;
     }
     tofe_files_print(files);
     tofe_files_free(files);
+    jibal_free(jibal);
     return EXIT_SUCCESS;
 }
