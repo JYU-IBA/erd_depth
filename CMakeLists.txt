@@ -18,7 +18,7 @@ find_package(OpenMP)
 configure_file(erd_depth_config.h.in erd_depth_config.h @ONLY)
 
 add_executable(erd_depth erd_depth.c)
-add_executable(tofe_list tofe_list.c)
+add_executable(tofe_list tofe_list.c tofe_list.h)
 
 target_include_directories(erd_depth PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>) #Because of erd_depth_config.h
