@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 project(erd_depth
-        VERSION 1.0.0
-        DESCRIPTION "ERD depth"
+        VERSION 1.1.0
+        DESCRIPTION "ERD depth and ToF-E list"
         LANGUAGES C
         )
 
@@ -18,6 +18,7 @@ find_package(OpenMP)
 configure_file(erd_depth_config.h.in erd_depth_config.h @ONLY)
 
 add_executable(erd_depth erd_depth.c)
+add_executable(tofe_list tofe_list.c)
 
 target_include_directories(erd_depth PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>) #Because of erd_depth_config.h
@@ -27,9 +28,14 @@ target_link_libraries(erd_depth
     PRIVATE "$<$<BOOL:${UNIX}>:m>"
     )
 
+target_link_libraries(tofe_list
+        PRIVATE jibal
+        PRIVATE "$<$<BOOL:${UNIX}>:m>"
+)
+
 if(OpenMP_C_FOUND)
     target_link_libraries(erd_depth PUBLIC OpenMP::OpenMP_C)
 endif()
 
-INSTALL(TARGETS erd_depth
+INSTALL(TARGETS erd_depth tofe_list
         RUNTIME DESTINATION bin)

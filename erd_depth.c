@@ -173,7 +173,7 @@ double Srbs_mc(double, double, double, double);
 double mc2lab_scatc(double, double, double);
 int allocate_general_sto_conc(General *, Measurement *, Stopping *, Concentration *);
 
-inline double ipow2(double x) {
+extern inline double ipow2(double x) {
     return (x * x);
 }
 
@@ -1064,7 +1064,7 @@ void read_events(General *general, Measurement *meas, Event *event,
             fprintf(stderr, "Problems at input line %i\n", i + 1);
         }
         if (i < MAXEVENTS) {
-            event[i].theta = meas->detector_angle + (x / 1000.0);
+            event[i].theta = meas->detector_angle + x;
             event[i].fii = y;
             event[i].E = E * C_MEV;
             event[i].Z = Z;
