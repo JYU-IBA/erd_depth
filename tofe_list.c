@@ -65,8 +65,7 @@ int cutfile_set_elements(jibal *jibal, cutfile *cutfile, const char *element_str
         tofe_list_msg(TOFE_LIST_ERROR, "File %s: element %s, Z = %i with A = %i could not be created (JIBAL issue?).", cutfile->filename, element->name, A); ;
     }
     if(rbs_element_str) {
-        const jibal_element *element_sample = jibal_element_find(jibal->elements, element_str);
-        element_sample = jibal_element_find(jibal->elements, rbs_element_str);
+        const jibal_element *element_sample = jibal_element_find(jibal->elements, rbs_element_str);
         cutfile->element_sample = jibal_element_copy(element_sample, rbs_A);
     } else {
         cutfile->element_sample = jibal_element_copy(cutfile->element, -1);
