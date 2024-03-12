@@ -272,6 +272,7 @@ int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutf
     double mass = cutfile->element->avg_mass / C_U;
     double weight_cutfile = cutfile->event_weight;
     const char *type_str = tofe_scatter_types[cutfile->type].s;
+    size_t n_counts = 0;
     while(getline(&line, &line_size, in) > 0) {
         lineno++;
         if(lineno <= cutfile->header_lines) {
@@ -296,10 +297,14 @@ int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutf
         double stop = tofelist_stop(jibal->gsto, cutfile->element->Z, cutfile->element->avg_mass, foil, energy) * tofin->foil_thickness;
         energy += stop;
         fprintf(out, "%12e %12e %8.5lf %3i %8.4lf %4s %.5lf %i\n", angle1, angle2, energy / C_MEV, Z, mass, type_str, weight, evnum);
+        n_counts++;
     }
-    /* TODO: Check that number of events matches with the header */
-
     fclose(in);
+    free(line);
+    if(n_counts != cutfile->n_counts) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Number of counts expected in file \"%s\" was %zu, but I got %zu.", cutfile->filename, cutfile->n_counts, n_counts);
+        return -1;
+    }
     return 0;
 }
 
@@ -410,7 +415,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Not enough arguments. Usage: tofe_list <tof.in file> <cutfile1> <cutfile2> ...\n");
         return EXIT_FAILURE;
     }
-    /* TODO: load settings file (tof length and calibration, angle calibration) */
     argc--;
     argv++;
     tofin_file *tofin = tofin_file_load(argv[0]);
