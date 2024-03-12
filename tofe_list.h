@@ -35,9 +35,8 @@ typedef struct cutfile {
     jibal_isotope *incident;
     double event_weight;
     int header_lines;
-    int A; /* mass number, A = 0 for a natural element of target element (in sample), will be used to parse element below */
-    char *element_str; /* element string, will be used to parse element below */
-    jibal_element *element; /* parsed element, contains all isotopes with relevant concentrations */
+    jibal_element *element; /* parsed element (in telescope), contains all isotopes with relevant concentrations */
+    jibal_element *element_sample; /* element (in sample)  */
 } cutfile;
 
 typedef struct list_files {
@@ -80,7 +79,8 @@ typedef enum tofe_list_msg_level {
 const char *msg_level_str(tofe_list_msg_level level);
 void tofe_list_msg(tofe_list_msg_level level, const char *restrict format, ...);
 void tofe_files_free(list_files *files);
-int cutfile_parse_filename(cutfile *cutfile);
+int cutfile_parse_filename(jibal *jibal, cutfile *cutfile);
+int cutfile_parse_extensions(jibal *jibal, cutfile *cutfile, char **extensions, int n_ext);
 int cutfile_read_headers(cutfile *cutfile);
 void cutfile_reset(cutfile *cutfile);
 void cutfile_free(cutfile *cutfile);

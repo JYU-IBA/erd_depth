@@ -49,56 +49,139 @@ void tofe_files_free(list_files *files) {
     free(files);
 }
 
-int cutfile_parse_filename(cutfile *cutfile) {
+int cutfile_set_elements(jibal *jibal, cutfile *cutfile, const char *element_str, int A, const char *rbs_element_str, int rbs_A) {
+#ifdef DEBUG
+    fprintf(stderr, "cutfile_set_elements(%p, %p, %s, %i, %s, %i)\n", jibal, cutfile, element_str, A, rbs_element_str, rbs_A);
+#endif
+    const jibal_element *element = jibal_element_find(jibal->elements, element_str);
+    if(!element) {
+        tofe_list_msg(TOFE_LIST_ERROR, "File %s: element \"%s\" not found", cutfile->filename, element_str);
+        return -1;
+    }
+    cutfile->element = jibal_element_copy(element, A);
+    if(!cutfile->element) {
+        tofe_list_msg(TOFE_LIST_ERROR, "File %s: element %s, Z = %i with A = %i could not be created (JIBAL issue?).", cutfile->filename, element->name, A); ;
+    }
+    if(rbs_element_str) {
+        const jibal_element *element_sample = jibal_element_find(jibal->elements, element_str);
+        element_sample = jibal_element_find(jibal->elements, rbs_element_str);
+        cutfile->element_sample = jibal_element_copy(element_sample, rbs_A);
+    } else {
+        cutfile->element_sample = jibal_element_copy(cutfile->element, -1);
+    }
+    return 0;
+}
+
+int cutfile_parse_extensions(jibal *jibal, cutfile *cutfile, char **extensions, int n_ext) {
+    if(n_ext < 3) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Filename \"%s\" does not have sufficient number of extensions.\n", cutfile->filename);
+        return -1;
+    }
+    char *nuclide = extensions[1];
+    char *element_str; /* Follows mass number (which is optional) */
+    int A = strtol(nuclide, &element_str, 10);
+    int A_rbs = 0;
+    if(A < 0 || A > 300) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Mass number out of range or conversion error with \"%s\"\n", nuclide);
+        return -1;
+    }
+    if(*element_str == '\0') {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not parse element from filename \"%s\"", cutfile->filename);
+        return -1;
+    }
+
+    size_t i_sep = strcspn(extensions[2], "_"); /* Try to find underscore */
+    char *rbs_element_str = extensions[2] + i_sep;
+    if(*rbs_element_str == '_') { /* Underscore found, skip it */
+        *rbs_element_str = 0; /* extensions[2] should now have only "RBS" */
+        rbs_element_str++;
+        A_rbs = strtol(rbs_element_str, &rbs_element_str, 10);
+    } else { /* Underscore not found, probably ERD */
+        rbs_element_str = NULL;
+    }
+    cutfile->type = jibal_option_get_value(tofe_scatter_types, extensions[2]);
+    if(cutfile->type == SCATTER_NONE) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not parse type (reaction, RBS or ERD) of cutfile from \"%s\"\n", cutfile->filename);
+        return -1;
+    }
+    if(cutfile->type == SCATTER_RBS && rbs_element_str == NULL) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Cutfile claims to be RBS, but there is no sample element given. File: \"%s\"\n", cutfile->filename);
+        return -1;
+    }
+
+    if(cutfile->type == SCATTER_ERD && rbs_element_str != NULL) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Cutfile claims to be ERD, but there a sample element given. File: \"%s\"\n", cutfile->filename);
+        return -1;
+    }
+    cutfile_set_elements(jibal, cutfile, element_str, A, rbs_element_str, A_rbs);
+    return 0;
+}
+
+
+int cutfile_parse_filename(jibal *jibal, cutfile *cutfile) {
     cutfile->basename = tofe_basename(cutfile->filename);
     if(!cutfile->basename) {
         tofe_list_msg(TOFE_LIST_ERROR, "Could not parse filename \"%s\"\n", cutfile->filename);
         return -1;
     }
-    char *ext = cutfile->basename + strcspn(cutfile->basename, "."); /* all extensions, i.e. string after first occurence of '.' */
-    if(*ext == '\0') {
-        tofe_list_msg(TOFE_LIST_ERROR, "Could not parse extension (1/2) of filename \"%s\"\n", cutfile->filename);
-        return -1;
+    char *basename = strdup(cutfile->basename);
+    char *basename_orig = basename;
+    char *extensions[6], **ext;
+    int n_ext = 0;
+    for(ext = extensions; (*ext = strsep(&basename, ".")) != NULL;) { /* Make an array of file extensions */
+        if(**ext != '\0') {
+            n_ext++;
+            if(++ext >= &extensions[6]) {
+                break;
+            }
+        }
     }
-    ext++;
-    char *nuclide = strdup(ext);
-    nuclide[strcspn(nuclide, ".")] = 0; /* Replaces first occurence of '.' with '\0', terminating the string, i.e. we extract foo from blabla.foo.blabla... */
-    char *element;
-    cutfile->A = strtol(nuclide, &element, 10);
-    if(cutfile->A < 0 || cutfile->A > 300) {
-        tofe_list_msg(TOFE_LIST_ERROR, "Mass number out of range or conversion error with \"%s\"\n", nuclide);
-        return -1;
+#ifdef DEBUG
+    for(int i = 0; i < n_ext; i++) {
+        fprintf(stderr, "extensions[%i] = %s\n", i, extensions[i]);
     }
-    if(*element != '\0') {
-        free(cutfile->element_str);
-        cutfile->element_str = strdup(element); /* Will be parsed later */
-    } else {
-        tofe_list_msg(TOFE_LIST_ERROR, "Could not parse element from filename \"%s\"", cutfile->filename);
-        return -1;
-    }
-    free(nuclide);
-    char *ext2 = ext + strcspn(ext, ".");
+#endif
+    cutfile_parse_extensions(jibal, cutfile, extensions, n_ext);
+    free(basename_orig);
+    return 0;
+}
 
-    if(*ext2 == '\0') {
-        tofe_list_msg(TOFE_LIST_ERROR, "Could not parse extension (2/2) of filename \"%s\"\n", cutfile->filename);
-        return -1;
+int cutfile_parse_header(cutfile *cutfile, int lineno, const char *header, const char *data) {
+    char *tmp;
+    int type;
+    switch (jibal_option_get_value(cutfile_headers, header)) {
+        case CUTFILE_HEADER_NONE:
+            break;
+        case CUTFILE_HEADER_TYPE:
+            type = jibal_option_get_value(tofe_scatter_types, data);
+            if(type != cutfile->type) {
+                tofe_list_msg(TOFE_LIST_ERROR, "Cutfile \"%s\" type %s given in header does not match type given in filename.", cutfile->filename, data);
+                return -1;
+            }
+            break;
+        case CUTFILE_HEADER_COUNT:
+            cutfile->n_counts = strtol(data, NULL, 10);
+            break;
+        case CUTFILE_HEADER_WEIGHT:
+            cutfile->event_weight = strtod(data, &tmp);
+            if(*tmp != '\0') {
+                tofe_list_msg(TOFE_LIST_WARNING, "Trailing characters in event weight: %s (got %g) in file \"%s\", was conversion successful?", data, cutfile->event_weight, cutfile->filename);
+            }
+            break;
+        case CUTFILE_HEADER_ENERGY:
+            break;
+        case CUTFILE_HEADER_ANGLE:
+            break;
+        case CUTFILE_HEADER_ELEMENT:
+            break;
+        case CUTFILE_HEADER_LOSSES:
+            break;
+        case CUTFILE_HEADER_SPLIT:
+            break;
+        default:
+            tofe_list_msg(TOFE_LIST_WARNING, "File %s line %i: unknown header \"%s\"", cutfile->filename, lineno, header);
+            break;
     }
-    ext2++;
-    char *type = strdup(ext2);
-    type[strcspn(type, ".")] = 0; /* Terminate at next dot, extracting only interesting bit of extension, probably something like "ERD" or "RBS_Xx" or "RBS_AAXx"  */
-    fprintf(stderr, "type = %s\n", type); /* */
-    size_t i_sep = strcspn(type, "_"); /* Try to find underscore */
-    char *rbs_element = type + i_sep;
-    if(*rbs_element == '_') { /* Underscore found, skip it and terminate at next dot */
-        rbs_element[strcspn(rbs_element, ".")] = 0;
-        *rbs_element = 0; /* ext2 should now have only "RBS" */
-        rbs_element++;
-    } else { /* Underscore not found, probably ERD */
-        rbs_element = NULL;
-    }
-    fprintf(stderr, "type = %s, rbs_element = %s\n", type, rbs_element);
-    /* TODO: parse type, check issues with cutfile->element and ERD vs RBS */
-    free(type);
     return 0;
 }
 
@@ -112,6 +195,7 @@ int cutfile_read_headers(cutfile *cutfile) {
         return -1;
     }
     int error = 0;
+    int type = SCATTER_NONE;
     while(getline(&line, &line_size, f) > 0) {
         lineno++;
         if(*line == '#') /* Comments are allowed */
@@ -134,36 +218,11 @@ int cutfile_read_headers(cutfile *cutfile) {
                           lineno, line);
             continue;
         }
-        //fprintf(stderr, "%i: \"%s\" and \"%s\"\n", cutfile->lineno, line, line_data);
-        char *tmp;
-        switch (jibal_option_get_value(cutfile_headers, line)) {
-            case CUTFILE_HEADER_NONE:
-                break;
-            case CUTFILE_HEADER_TYPE:
-                cutfile->type = jibal_option_get_value(tofe_scatter_types, line_data);
-                break;
-            case CUTFILE_HEADER_COUNT:
-                cutfile->n_counts = strtol(line_data, NULL, 10);
-                break;
-            case CUTFILE_HEADER_WEIGHT:
-                cutfile->event_weight = strtod(line_data, &tmp);
-                if(*tmp != '\0') {
-                    tofe_list_msg(TOFE_LIST_WARNING, "Trailing characters in event weight: %s (got %g), was conversion successful?", line_data, cutfile->event_weight);
-                }
-                break;
-            case CUTFILE_HEADER_ENERGY:
-                break;
-            case CUTFILE_HEADER_ANGLE:
-                break;
-            case CUTFILE_HEADER_ELEMENT:
-                break;
-            case CUTFILE_HEADER_LOSSES:
-                break;
-            case CUTFILE_HEADER_SPLIT:
-                break;
-            default:
-                tofe_list_msg(TOFE_LIST_WARNING, "File %s line %i: unknown header \"%s\"", cutfile->filename, lineno, line);
-                break;
+#ifdef DEBUG
+        fprintf(stderr, "%i: \"%s\" and \"%s\"\n", cutfile->lineno, line, line_data);
+#endif
+        if(cutfile_parse_header(cutfile, lineno, line, line_data)) {
+            error++;
         }
     }
     free(line);
@@ -184,6 +243,7 @@ void cutfile_free(cutfile *cutfile) {
     free(cutfile->filename);
     free(cutfile->basename);
     jibal_element_free(cutfile->element);
+    jibal_element_free(cutfile->element_sampl);
 }
 
 int cutfile_convert(FILE *out, const cutfile *cutfile) {
@@ -246,7 +306,7 @@ list_files *tofe_files_from_argv(jibal *jibal, int argc, char **argv) { /* Argum
         cutfile *cutfile = &files->cutfiles[i];
         cutfile_reset(cutfile);
         cutfile->filename = strdup(argv[i]);
-        if(cutfile_parse_filename(cutfile)) {
+        if(cutfile_parse_filename(jibal, cutfile)) {
             error = 1;
             break;
         }
@@ -254,17 +314,7 @@ list_files *tofe_files_from_argv(jibal *jibal, int argc, char **argv) { /* Argum
             error = 1;
             break;
         }
-        if(!cutfile->element_str) {
-            tofe_list_msg(TOFE_LIST_ERROR, "No element could be determined from filename \"%s\"", cutfile->filename);
-        }
-        const jibal_element *element = jibal_element_find(jibal->elements, cutfile->element_str);
-        if(!element) {
-            tofe_list_msg(TOFE_LIST_ERROR, "File %s: element \"%s\" not found", cutfile->filename, cutfile->element_str) ;
-        }
-        cutfile->element = jibal_element_copy(element, cutfile->A);
-        if(!cutfile->element) {
-            tofe_list_msg(TOFE_LIST_ERROR, "File %s: element %s, Z = %i with A = %i could not be created (JIBAL issue?).", cutfile->filename, element->name, cutfile->A); ;
-        }
+
     }
     if(error) {
         tofe_files_free(files);
@@ -300,12 +350,12 @@ void tofe_files_print(list_files *files) {
     if(!files) {
         return;
     }
-    fprintf(stderr, "%32s | type |   A |   Z |    mass | weight | head |   counts\n", "filename");
+    fprintf(stderr, "%32s | type | isotopes |   Z |    mass | sample element | weight | headers |   counts\n", "filename");
     for(size_t i = 0; i < files->n_files; i++) {
         cutfile *cutfile = &files->cutfiles[i];
-        fprintf(stderr, "%32s | %4s | %3i | %3i | %7.4lf | %6.3lf | %4i | %8zu\n",
-                cutfile->basename, tofe_scatter_types[cutfile->type].s, cutfile->A,
-                cutfile->element->Z,  cutfile->element->avg_mass / C_U,
+        fprintf(stderr, "%32s | %4s |   %6zu | %3i | %7.4lf | %14s | %6.3lf | %7i | %8zu\n",
+                cutfile->basename, tofe_scatter_types[cutfile->type].s, cutfile->element->n_isotopes,
+                cutfile->element->Z,  cutfile->element->avg_mass / C_U, cutfile->element_sample->name,
                 cutfile->event_weight, cutfile->header_lines, cutfile->n_counts);
     }
 }
@@ -318,7 +368,7 @@ int tofe_files_convert(list_files *files) {
 }
 
 int main(int argc, char **argv) {
-#if 0
+#ifdef DEBUG
     for(int i = 0; i < argc; i++) {
         fprintf(stderr, "tofe_list argv[%i] = %s\n", i, argv[i]);
     }
