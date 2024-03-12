@@ -56,25 +56,49 @@ int cutfile_parse_filename(cutfile *cutfile) {
         return -1;
     }
     char *ext = cutfile->basename + strcspn(cutfile->basename, "."); /* all extensions, i.e. string after first occurence of '.' */
-    if(*ext != '\0') {
-        ext++;
-        char *nuclide = strdup(ext);
-        nuclide[strcspn(nuclide, ".")] = 0; /* Replaces first occurence of '.' with '\0', terminating the string, i.e. we extract foo from blabla.foo.blabla... */
-        char *element;
-        cutfile->A = strtol(nuclide, &element, 10);
-        if(cutfile->A < 0 || cutfile->A > 300) {
-            tofe_list_msg(TOFE_LIST_ERROR, "Mass number out of range or conversion error with \"%s\"\n", nuclide);
-            return -1;
-        }
-        if(*element != '\0') {
-            free(cutfile->element_str);
-            cutfile->element_str = strdup(element); /* Will be parsed later */
-        } else {
-            tofe_list_msg(TOFE_LIST_ERROR, "Could not parse element from filename \"%s\"", cutfile->filename);
-            return -1;
-        }
-        free(nuclide);
+    if(*ext == '\0') {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not parse extension (1/2) of filename \"%s\"\n", cutfile->filename);
+        return -1;
     }
+    ext++;
+    char *nuclide = strdup(ext);
+    nuclide[strcspn(nuclide, ".")] = 0; /* Replaces first occurence of '.' with '\0', terminating the string, i.e. we extract foo from blabla.foo.blabla... */
+    char *element;
+    cutfile->A = strtol(nuclide, &element, 10);
+    if(cutfile->A < 0 || cutfile->A > 300) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Mass number out of range or conversion error with \"%s\"\n", nuclide);
+        return -1;
+    }
+    if(*element != '\0') {
+        free(cutfile->element_str);
+        cutfile->element_str = strdup(element); /* Will be parsed later */
+    } else {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not parse element from filename \"%s\"", cutfile->filename);
+        return -1;
+    }
+    free(nuclide);
+    char *ext2 = ext + strcspn(ext, ".");
+
+    if(*ext2 == '\0') {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not parse extension (2/2) of filename \"%s\"\n", cutfile->filename);
+        return -1;
+    }
+    ext2++;
+    char *type = strdup(ext2);
+    type[strcspn(type, ".")] = 0; /* Terminate at next dot, extracting only interesting bit of extension, probably something like "ERD" or "RBS_Xx" or "RBS_AAXx"  */
+    fprintf(stderr, "type = %s\n", type); /* */
+    size_t i_sep = strcspn(type, "_"); /* Try to find underscore */
+    char *rbs_element = type + i_sep;
+    if(*rbs_element == '_') { /* Underscore found, skip it and terminate at next dot */
+        rbs_element[strcspn(rbs_element, ".")] = 0;
+        *rbs_element = 0; /* ext2 should now have only "RBS" */
+        rbs_element++;
+    } else { /* Underscore not found, probably ERD */
+        rbs_element = NULL;
+    }
+    fprintf(stderr, "type = %s, rbs_element = %s\n", type, rbs_element);
+    /* TODO: parse type, check issues with cutfile->element and ERD vs RBS */
+    free(type);
     return 0;
 }
 
@@ -203,7 +227,7 @@ int cutfile_convert(FILE *out, const cutfile *cutfile) {
         double weight = weight_cutfile; /* TODO: efficiency correction */
         double energy = 1.0; /* TODO: energy conversion (+ stopping) */
         //0.000000e+00 0.000000e+00    2.98967  14  28.0855 ERD  1.000 947984
-        fprintf(out, "%12e %12e %8.5lf %3i %8.4lf %4s %.5lf %i\n", 0.0, 0.0, 1.0, Z, mass, type_str, weight, evnum);
+        //fprintf(out, "%12e %12e %8.5lf %3i %8.4lf %4s %.5lf %i\n", 0.0, 0.0, 1.0, Z, mass, type_str, weight, evnum);
     }
     fclose(in);
     return 0;
