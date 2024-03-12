@@ -243,6 +243,7 @@ void cutfile_reset(cutfile *cutfile) {
 void cutfile_free(cutfile *cutfile) {
     free(cutfile->filename);
     free(cutfile->basename);
+    efficiencyfile_free(cutfile->ef);
     jibal_element_free(cutfile->element);
     jibal_element_free(cutfile->element_sample);
 }
@@ -259,7 +260,6 @@ double tofelist_stop(jibal_gsto *workspace, int Z1, double mass, const jibal_mat
 }
 
 int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutfile *cutfile, const jibal_material *foil) {
-    /* TODO: Load relevant efficiency file */
     FILE *in = fopen(cutfile->filename, "r");
     if(!in) {
         tofe_list_msg(TOFE_LIST_ERROR, "Could not open file \"%s\" (reading for conversion)!\n", cutfile->filename);
@@ -273,6 +273,7 @@ int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutf
     double weight_cutfile = cutfile->event_weight;
     const char *type_str = tofe_scatter_types[cutfile->type].s;
     size_t n_counts = 0;
+    double weight_avg = 0.0;
     while(getline(&line, &line_size, in) > 0) {
         lineno++;
         if(lineno <= cutfile->header_lines) {
@@ -291,12 +292,17 @@ int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutf
             tofe_list_msg(TOFE_LIST_ERROR, "Error in scanning input file %s on line %i: %s", cutfile->filename, lineno, line);
             break;
         }
-
-        double weight = weight_cutfile; /* TODO: efficiency correction */
         double energy = energy_from_tof(tofin, tof, cutfile->element->avg_mass);
         double stop = tofelist_stop(jibal->gsto, cutfile->element->Z, cutfile->element->avg_mass, foil, energy) * tofin->foil_thickness;
         energy += stop;
-        fprintf(out, "%12e %12e %8.5lf %3i %8.4lf %4s %.5lf %i\n", angle1, angle2, energy / C_MEV, Z, mass, type_str, weight, evnum);
+
+        double weight = weight_cutfile;
+        if(cutfile->ef) {
+            weight *= efficiencyfile_get_weight(cutfile->ef, energy);
+        }
+        weight_avg += weight;
+
+        fprintf(out, "%8.5lf %8.5lf %8.5lf %3i %8.4lf %3s %8.5lf %8i\n", angle1, angle2, energy / C_MEV, Z, mass, type_str, weight, evnum);
         n_counts++;
     }
     fclose(in);
@@ -305,10 +311,12 @@ int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutf
         tofe_list_msg(TOFE_LIST_ERROR, "Number of counts expected in file \"%s\" was %zu, but I got %zu.", cutfile->filename, cutfile->n_counts, n_counts);
         return -1;
     }
+    weight_avg /= (double)n_counts;
+    tofe_list_msg(TOFE_LIST_INFO, "File \"%s\": converted %zu counts, cutfile weight %.5lf, average weight %.5lf", cutfile->basename, cutfile->event_weight, weight_avg);
     return 0;
 }
 
-list_files *tofe_files_from_argv(jibal *jibal, int argc, char **argv) { /* Argument vector should contain filenames. Reads headers, closes files. */
+list_files *tofe_files_from_argv(jibal *jibal, const tofin_file *tofin, int argc, char **argv) { /* Argument vector should contain filenames. Reads headers, closes files. */
     if(argc == 0 || argv == NULL) {
         tofe_list_msg(TOFE_LIST_ERROR, "No files.");
         return NULL;
@@ -329,7 +337,10 @@ list_files *tofe_files_from_argv(jibal *jibal, int argc, char **argv) { /* Argum
             error = 1;
             break;
         }
-
+        if(cutfile_load_efficiencyfile(cutfile, tofin)) {
+            tofe_list_msg(TOFE_LIST_ERROR, "Error while loading efficiency file for cutfile \"%s\" (%s)\n", cutfile->filename, cutfile->element->name);
+            return NULL;
+        }
     }
     if(error) {
         tofe_files_free(files);
@@ -365,19 +376,23 @@ void tofe_files_print(list_files *files) {
     if(!files) {
         return;
     }
-    fprintf(stderr, "%32s | type | isotopes |   Z |    mass | sample element | weight | headers |   counts\n", "filename");
+    fprintf(stderr, "%32s | type | isotopes |   Z |    mass | sample element | weight | eff? | headers |   counts\n", "filename");
     for(size_t i = 0; i < files->n_files; i++) {
         cutfile *cutfile = &files->cutfiles[i];
-        fprintf(stderr, "%32s | %4s |   %6zu | %3i | %7.4lf | %14s | %6.3lf | %7i | %8zu\n",
+        fprintf(stderr, "%32s | %4s |   %6zu | %3i | %7.4lf | %14s | %6.3lf | %4s | %7i | %8zu\n",
                 cutfile->basename, tofe_scatter_types[cutfile->type].s, cutfile->element->n_isotopes,
                 cutfile->element->Z,  cutfile->element->avg_mass / C_U, cutfile->element_sample->name,
-                cutfile->event_weight, cutfile->header_lines, cutfile->n_counts);
+                cutfile->event_weight, cutfile->ef?"yes":"no", cutfile->header_lines, cutfile->n_counts);
     }
 }
 
 int tofe_files_convert(jibal *jibal, const tofin_file *tofin, list_files *files, const jibal_material *foil) {
     for(size_t i = 0; i < files->n_files; i++) {
-        cutfile_convert(jibal, stdout, tofin, &files->cutfiles[i], foil);
+        cutfile *cutfile =  &files->cutfiles[i];
+        if(cutfile_convert(jibal, stdout, tofin, cutfile, foil)) {
+            tofe_list_msg(TOFE_LIST_ERROR, "Error while processing cutfile \"%s\"\n", cutfile->filename);
+            return -1;
+        }
     }
     return 0;
 }
@@ -405,6 +420,112 @@ double energy_from_tof(const tofin_file *tofin, int ch, double mass) {
     return 0.5 * mass * pow2(tofin->toflen/tof);
 }
 
+int efficiencyfile_points_realloc(efficiencyfile *ef, size_t n_points) {
+    if(!ef) {
+        return -1;
+    }
+    if(n_points == ef->n_points) {
+        return 0;
+    }
+    efficiencypoint *p_new  = realloc(ef->p, n_points * sizeof(efficiencypoint));
+    if(!p_new) {
+        return -1;
+    }
+    ef->p = p_new;
+    ef->n_points = n_points;
+    return 0;
+}
+
+efficiencyfile *efficiencyfile_load(const char *filename) {
+    FILE *f = fopen(filename, "r");
+    if(!f) { /* Fail silently; the file might not exist */
+        return NULL;
+    }
+    efficiencyfile *ef = calloc(1, sizeof(efficiencyfile));
+    char *line = NULL;
+    size_t line_size = 0;
+    size_t n = 0;
+    if(efficiencyfile_points_realloc(ef, EFFICIENCY_FILE_POINTS_INITIAL_ALLOC)) {
+        tofe_list_msg(TOFE_LIST_WARNING, "Initial allocation of efficiency file failed. This shouldn't happen.");
+        return NULL;
+    }
+    while(getline(&line, &line_size, f) > 0) {
+        if(*line == '#') { /* Comment */
+            continue;
+        }
+        line[strcspn(line, "\r\n")] = 0; /* Strips all kinds of newlines! */
+        if(*line == '\0') { /* Empty line */
+            continue;
+        }
+        if(n >= ef->n_points) {
+            if(efficiencyfile_points_realloc(ef, ef->n_points * 2)) {
+                tofe_list_msg(TOFE_LIST_WARNING, "Allocation of efficiency file failed (old n = %zu)", ef->n_points);
+                return NULL;
+            }
+        }
+        if(sscanf(line, "%lf %lf", &ef->p[n].E, &ef->p[n].eff) != 2) {
+            break;
+        }
+        ef->p[n].E *= C_MEV;
+        n++;
+    }
+    if(!feof(f)) {
+        tofe_list_msg(TOFE_LIST_WARNING, "Reading of efficiency file \"%s\" was aborted before the end was reached.\n");
+        efficiencyfile_free(ef);
+        return NULL;
+    }
+    tofe_list_msg(TOFE_LIST_INFO, "Got %zu points from efficiency file \"%s\". Highest energy %g MeV.", n, filename, ef->p[n-1].E / C_MEV);
+    ef->n_points = n; /* We could also realloc to save unused space */
+    return ef;
+}
+void efficiencyfile_free(efficiencyfile *ef) {
+    if(!ef) {
+        return;
+    }
+    free(ef->p);
+    free(ef);
+}
+
+char *cutfile_efficiencyfile_name(const cutfile *cutfile, const tofin_file *tofin) {
+    char *filename;
+    if(asprintf(&filename, "%s/%s.eff", tofin->efficiency_directory, cutfile->element->name) < 0) {
+        return NULL;
+    }
+    return filename;
+}
+
+int cutfile_load_efficiencyfile(cutfile *cutfile, const tofin_file *tofin) {
+    char *eff_filename = cutfile_efficiencyfile_name(cutfile, tofin);
+    if(!eff_filename) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Efficiency filename error.\n");
+        return -1;
+    }
+    cutfile->ef = efficiencyfile_load(eff_filename);
+    return 0;
+}
+
+double efficiencyfile_get_weight(efficiencyfile *ef, double E) {
+    size_t lo = 0, mi, hi = ef->n_points - 1;
+    while (hi - lo > 1) {
+        mi = (hi + lo) / 2;
+        if (E >= ef->p[mi].E) {
+            lo = mi;
+        } else {
+            hi = mi;
+        }
+    }
+    if(E > ef->p[ef->n_points - 1].E || E < ef->p[0].E) {
+        tofe_list_msg(TOFE_LIST_WARNING, "Energy %g MeV is out of bounds for efficiency file. Assuming zero efficiency!\n", E / C_MEV);
+        return 0.0;
+    }
+    double out = jibal_linear_interpolation(ef->p[lo].E, ef->p[lo + 1].E, ef->p[lo].eff, ef->p[lo + 1].eff, E);
+#ifdef DEBUG
+    fprintf(stderr, "Interpolation, E = %g keV = [%g keV, %g keV], eff = [%lf, %lf], output = %g\n", E / C_KEV, ef->p[lo].E / C_KEV, ef->p[lo + 1].E / C_KEV, ef->p[lo].eff, ef->p[lo + 1].eff, out);
+#endif
+    return out;
+}
+
+
 int main(int argc, char **argv) {
 #ifdef DEBUG
     for(int i = 0; i < argc; i++) {
@@ -412,20 +533,20 @@ int main(int argc, char **argv) {
     }
 #endif
     if(argc < 3) {
-        fprintf(stderr, "Not enough arguments. Usage: tofe_list <tof.in file> <cutfile1> <cutfile2> ...\n");
+        tofe_list_msg(TOFE_LIST_ERROR, "Not enough arguments. Usage: tofe_list <tof.in file> <cutfile1> <cutfile2> ...");
         return EXIT_FAILURE;
     }
     argc--;
     argv++;
     tofin_file *tofin = tofin_file_load(argv[0]);
     if(!tofin) {
-        tofe_list_msg(TOFE_LIST_ERROR, "Could not load or parse settings file \"%s\".\n", argv[0]);
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not load or parse settings file \"%s\".", argv[0]);
         return EXIT_FAILURE;
     }
     argc--;
     argv++;
     jibal *jibal = jibal_init(NULL);
-    list_files *files = tofe_files_from_argv(jibal, argc, argv);
+    list_files *files = tofe_files_from_argv(jibal, tofin, argc, argv);
     if(!files) {
         return EXIT_FAILURE;
     }
@@ -436,12 +557,18 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
     tofin->foil_thickness /= foil->elements[0].avg_mass; /* TODO: works only on monoelemental foils. Not a massive issue, giving foil thickness in ug/cm2 is quite stupid in this case. */
-    tofe_list_msg(TOFE_LIST_INFO, "Carbon foil thickness %g tfu\n", tofin->foil_thickness / C_TFU);
-    tofe_files_assign_stopping(jibal, files, foil);
+    tofe_list_msg(TOFE_LIST_INFO, "Carbon foil thickness %g tfu", tofin->foil_thickness / C_TFU);
+    tofe_list_msg(TOFE_LIST_INFO, "ToF length %g m, calibration slope %.6lf ns/ch, offset %.3lf ns", tofin->toflen, tofin->tof_slope / C_NS, tofin->tof_offset / C_NS);
+    if(tofe_files_assign_stopping(jibal, files, foil)) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not assign stopping. JIBAL issue?");
+        return EXIT_FAILURE;
+    }
     if(jibal_gsto_load_all(jibal->gsto) == 0) {
-        tofe_list_msg(TOFE_LIST_ERROR, "Could not load stopping. JIBAL issue?\n");
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not load stopping. JIBAL issue?");
+        return EXIT_FAILURE;
     }
     jibal_gsto_print_assignments(jibal->gsto);
+    tofe_list_msg(TOFE_LIST_INFO, "Starting conversion of %zu cutfiles.", files->n_files);
     tofe_files_convert(jibal, tofin, files, foil);
     jibal_material_free(foil);
     tofe_files_free(files);

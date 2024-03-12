@@ -3,6 +3,8 @@
 
 #include <jibal_option.h>
 
+#define EFFICIENCY_FILE_POINTS_INITIAL_ALLOC (1024)
+
 typedef enum scatter_type {
     SCATTER_NONE = 0,
     SCATTER_ERD = 1,
@@ -16,15 +18,15 @@ static const jibal_option tofe_scatter_types[] = {
         {0, 0}
 };
 
-typedef struct tofe_list_event {
-    int tof;
-    int e;
-    int ang;
-    int eventno;
-    double energy;
-    double angle1;
-    double angle2;
-} tofe_list_event;
+typedef struct efficiencypoint {
+    double E;
+    double eff;
+} efficiencypoint;
+
+typedef struct efficiencyfile {
+    efficiencypoint *p;
+    size_t n_points;
+} efficiencyfile;
 
 typedef struct cutfile {
     char *filename;
@@ -37,6 +39,7 @@ typedef struct cutfile {
     int header_lines;
     jibal_element *element; /* parsed element (in telescope), contains all isotopes with relevant concentrations */
     jibal_element *element_sample; /* element (in sample)  */
+    efficiencyfile *ef;
 } cutfile;
 
 typedef struct list_files {
@@ -85,10 +88,16 @@ int cutfile_read_headers(cutfile *cutfile);
 void cutfile_reset(cutfile *cutfile);
 void cutfile_free(cutfile *cutfile);
 int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutfile *cutfile, const jibal_material *foil);
-list_files *tofe_files_from_argv(jibal *jibal, int argc, char **argv);
+list_files *tofe_files_from_argv(jibal *jibal, const tofin_file *tofin, int argc, char **argv);
 char *tofe_basename(const char *path);
 void tofe_files_print(list_files *files);
 int tofe_files_assign_stopping(jibal *jibal, const list_files *files, const jibal_material *foil);
 int tofe_files_convert(jibal *jibal, const tofin_file *tofin, list_files *files, const jibal_material *foil);
 double energy_from_tof(const tofin_file *tofin, int ch, double mass);
+efficiencyfile *efficiencyfile_load(const char *filename);
+void efficiencyfile_free(efficiencyfile *ef);
+int efficiencyfile_points_realloc(efficiencyfile *ef, size_t n_points);
+double efficiencyfile_get_weight(efficiencyfile *ef, double E);
+char *cutfile_efficiencyfile_name(const cutfile *cutfile, const tofin_file *tofin);
+int cutfile_load_efficiencyfile(cutfile *cutfile, const tofin_file *tofin);
 #endif //TOFE_LIST_H
