@@ -243,14 +243,12 @@ void cutfile_free(cutfile *cutfile) {
     free(cutfile->filename);
     free(cutfile->basename);
     jibal_element_free(cutfile->element);
-    jibal_element_free(cutfile->element_sampl);
+    jibal_element_free(cutfile->element_sample);
 }
 
 int cutfile_convert(FILE *out, const cutfile *cutfile) {
-    /* Load stopping of recoils/scattered ions in carbon foil */
     /* Load relevant efficiency file */
-    /* Skip headers */
-    /* Convert ToF to E and add back energy lost in foil */
+
     /* Convert position coordinate to angle */
     /* Create properly formatted output */
     /* Check that number of events matches with the header */
@@ -367,6 +365,20 @@ int tofe_files_convert(list_files *files) {
     return 0;
 }
 
+int tofe_files_assign_stopping(jibal *jibal, const list_files *files, const jibal_material *foil) {
+    for(size_t i = 0; i < files->n_files; i++) {
+        const cutfile *cutfile = &files->cutfiles[i];
+        for(size_t i_elem = 0; i_elem < foil->n_elements; i_elem++) {
+            const jibal_element *foil_element = &foil->elements[i_elem];
+            if(!jibal_gsto_auto_assign(jibal->gsto, cutfile->element->Z, foil_element->Z)) {
+                tofe_list_msg(TOFE_LIST_ERROR, "Assignment of GSTO stopping Z1 = %i, Z2 = %i fails.\n", cutfile->element->Z, foil_element->Z);
+                return -1;
+            }
+        }
+    }
+    return 0;
+}
+
 int main(int argc, char **argv) {
 #ifdef DEBUG
     for(int i = 0; i < argc; i++) {
@@ -377,6 +389,7 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Not enough arguments. Usage: tofe_list <cutfile1> <cutfile2> ...\n");
         return EXIT_FAILURE;
     }
+    /* TODO: load settings file (tof length and calibration, angle calibration) */
     argc--;
     argv++;
     jibal *jibal = jibal_init(NULL);
@@ -385,7 +398,17 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
     tofe_files_print(files);
+    jibal_material *foil = jibal_material_create(jibal->elements, "C");
+    if(!foil) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not create carbon foil data structure. JIBAL issue?\n");
+    }
+    tofe_files_assign_stopping(jibal, files, foil);
+    if(jibal_gsto_load_all(jibal->gsto) == 0) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not load stopping. JIBAL issue?\n");
+    }
+    jibal_gsto_print_assignments(jibal->gsto);
     tofe_files_convert(files);
+    jibal_material_free(foil);
     tofe_files_free(files);
     jibal_free(jibal);
     return EXIT_SUCCESS;

@@ -89,4 +89,5 @@ list_files *tofe_files_from_argv(jibal *jibal, int argc, char **argv);
 char *tofe_basename(const char *path);
 void tofe_files_print(list_files *files);
 int tofe_files_convert(list_files *files);
+int tofe_files_assign_stopping(jibal *jibal, const list_files *files, const jibal_material *foil);
 #endif //TOFE_LIST_H
