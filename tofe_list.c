@@ -12,6 +12,7 @@
 #include <libgen.h> /* for basename() */
 #include <sys/param.h> /* for MAXPATHLEN */
 #endif
+#include "tof_in.h"
 #include "tofe_list.h"
 
 const char *msg_level_str(tofe_list_msg_level level) {
@@ -150,8 +151,6 @@ int cutfile_parse_header(cutfile *cutfile, int lineno, const char *header, const
     char *tmp;
     int type;
     switch (jibal_option_get_value(cutfile_headers, header)) {
-        case CUTFILE_HEADER_NONE:
-            break;
         case CUTFILE_HEADER_TYPE:
             type = jibal_option_get_value(tofe_scatter_types, data);
             if(type != cutfile->type) {
@@ -178,6 +177,7 @@ int cutfile_parse_header(cutfile *cutfile, int lineno, const char *header, const
             break;
         case CUTFILE_HEADER_SPLIT:
             break;
+        case CUTFILE_HEADER_NONE:
         default:
             tofe_list_msg(TOFE_LIST_WARNING, "File %s line %i: unknown header \"%s\"", cutfile->filename, lineno, header);
             break;
@@ -188,8 +188,8 @@ int cutfile_parse_header(cutfile *cutfile, int lineno, const char *header, const
 int cutfile_read_headers(cutfile *cutfile) {
     char *line = NULL, *line_data;
     size_t line_size = 0;
-    FILE *f = fopen(cutfile->filename, "r");
     int lineno = 0;
+    FILE *f = fopen(cutfile->filename, "r");
     if(!f) {
         tofe_list_msg(TOFE_LIST_ERROR, "Could not open file \"%s\"", cutfile->filename);
         return -1;
@@ -246,12 +246,8 @@ void cutfile_free(cutfile *cutfile) {
     jibal_element_free(cutfile->element_sample);
 }
 
-int cutfile_convert(FILE *out, const cutfile *cutfile) {
-    /* Load relevant efficiency file */
-
-    /* Convert position coordinate to angle */
-    /* Create properly formatted output */
-    /* Check that number of events matches with the header */
+int cutfile_convert(FILE *out, const tofin_file *tofin, const cutfile *cutfile) {
+    /* TODO: Load relevant efficiency file */
     FILE *in = fopen(cutfile->filename, "r");
     if(!in) {
         tofe_list_msg(TOFE_LIST_ERROR, "Could not open file \"%s\" (reading for conversion)!\n", cutfile->filename);
@@ -273,20 +269,23 @@ int cutfile_convert(FILE *out, const cutfile *cutfile) {
             continue;
         }
         int tof, e, ang1, evnum;
+        double angle1, angle2 = 0.0;
         if(sscanf(line, "%i %i %i %i", &tof, &e, &ang1, &evnum) == 4) {
-            //angle1=ang1*input.acalib1+input.acalib2;
+            angle1 = ang1 * tofin->angle_slope+tofin->angle_offset;
         } else if(sscanf(line, "%i %i %i", &tof, &e, &evnum) == 3) {
-            //angle1=0.0;
+            angle1 = 0.0;
         } else {
             tofe_list_msg(TOFE_LIST_ERROR, "Error in scanning input file %s on line %i: %s", cutfile->filename, lineno, line);
             break;
         }
 
         double weight = weight_cutfile; /* TODO: efficiency correction */
-        double energy = 1.0; /* TODO: energy conversion (+ stopping) */
+        double energy = energy_from_tof(tofin, tof, cutfile->element->avg_mass);
         //0.000000e+00 0.000000e+00    2.98967  14  28.0855 ERD  1.000 947984
-        //fprintf(out, "%12e %12e %8.5lf %3i %8.4lf %4s %.5lf %i\n", 0.0, 0.0, 1.0, Z, mass, type_str, weight, evnum);
+        fprintf(out, "%12e %12e %8.5lf %3i %8.4lf %4s %.5lf %i\n", angle1, angle2, energy / C_MEV, Z, mass, type_str, weight, evnum);
     }
+    /* TODO: Check that number of events matches with the header */
+
     fclose(in);
     return 0;
 }
@@ -335,7 +334,7 @@ char *tofe_basename(const char *path) { /*  e.g. /bla/bla/tofe2363.O.ERD.0.cut =
     free(ext);
     return out;
 #else
-    char *bname = malloc(MAXPATHLEN);
+    char *bname = calloc(MAXPATHLEN, sizeof(char));
     if(!basename_r(path, bname)) {
         free(bname);
         return NULL;
@@ -358,9 +357,9 @@ void tofe_files_print(list_files *files) {
     }
 }
 
-int tofe_files_convert(list_files *files) {
+int tofe_files_convert(const tofin_file *tofin, list_files *files) {
     for(size_t i = 0; i < files->n_files; i++) {
-        cutfile_convert(stdout, &files->cutfiles[i]);
+        cutfile_convert(stdout, tofin, &files->cutfiles[i]);
     }
     return 0;
 }
@@ -379,17 +378,30 @@ int tofe_files_assign_stopping(jibal *jibal, const list_files *files, const jiba
     return 0;
 }
 
+double energy_from_tof(const tofin_file *tofin, int ch, double mass) {
+    double tof = (ch + ((double)(rand())/RAND_MAX) - 0.5) * tofin->tof_slope + tofin->tof_slope;
+    //fprintf(stderr, "tof = %g s, ch = %i mass = %g\n", tof, ch, mass / C_U);
+    return 0.5 * mass * pow2(tofin->toflen/tof);
+}
+
 int main(int argc, char **argv) {
 #ifdef DEBUG
     for(int i = 0; i < argc; i++) {
         fprintf(stderr, "tofe_list argv[%i] = %s\n", i, argv[i]);
     }
 #endif
-    if(argc < 2) {
-        fprintf(stderr, "Not enough arguments. Usage: tofe_list <cutfile1> <cutfile2> ...\n");
+    if(argc < 3) {
+        fprintf(stderr, "Not enough arguments. Usage: tofe_list <tof.in file> <cutfile1> <cutfile2> ...\n");
         return EXIT_FAILURE;
     }
     /* TODO: load settings file (tof length and calibration, angle calibration) */
+    argc--;
+    argv++;
+    tofin_file *tofin = tofin_file_load(argv[0]);
+    if(!tofin) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Could not load or parse settings file \"%s\".\n", argv[0]);
+        return EXIT_FAILURE;
+    }
     argc--;
     argv++;
     jibal *jibal = jibal_init(NULL);
@@ -407,9 +419,10 @@ int main(int argc, char **argv) {
         tofe_list_msg(TOFE_LIST_ERROR, "Could not load stopping. JIBAL issue?\n");
     }
     jibal_gsto_print_assignments(jibal->gsto);
-    tofe_files_convert(files);
+    tofe_files_convert(tofin, files);
     jibal_material_free(foil);
     tofe_files_free(files);
+    tofin_file_free(tofin);
     jibal_free(jibal);
     return EXIT_SUCCESS;
 }
