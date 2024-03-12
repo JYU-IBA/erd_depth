@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <jibal.h>
+#include <jibal_stop.h>
 #ifdef WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -246,7 +247,18 @@ void cutfile_free(cutfile *cutfile) {
     jibal_element_free(cutfile->element_sample);
 }
 
-int cutfile_convert(FILE *out, const tofin_file *tofin, const cutfile *cutfile) {
+double tofelist_stop(jibal_gsto *workspace, int Z1, double mass, const jibal_material *target, double E) {
+    double sum = 0.0;
+    double em = E/mass;
+    for (int i = 0; i < target->n_elements; i++) {
+        jibal_element *element = &target->elements[i];
+        sum += target->concs[i]*(jibal_gsto_get_em(workspace, GSTO_STO_ELE, Z1, element->Z, em) + jibal_gsto_stop_nuclear_universal(E, Z1, mass, element->Z, element->avg_mass));
+    }
+   //fprintf(stderr, "Stop of Z1 = %i, mass = %g u at E = %g keV is %g eV/tfu\n", Z1, mass / C_U, E / C_KEV, sum / C_EV_TFU);
+    return sum;
+}
+
+int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutfile *cutfile, const jibal_material *foil) {
     /* TODO: Load relevant efficiency file */
     FILE *in = fopen(cutfile->filename, "r");
     if(!in) {
@@ -271,7 +283,7 @@ int cutfile_convert(FILE *out, const tofin_file *tofin, const cutfile *cutfile) 
         int tof, e, ang1, evnum;
         double angle1, angle2 = 0.0;
         if(sscanf(line, "%i %i %i %i", &tof, &e, &ang1, &evnum) == 4) {
-            angle1 = ang1 * tofin->angle_slope+tofin->angle_offset;
+            angle1 = ang1 * tofin->angle_slope + tofin->angle_offset;
         } else if(sscanf(line, "%i %i %i", &tof, &e, &evnum) == 3) {
             angle1 = 0.0;
         } else {
@@ -281,7 +293,8 @@ int cutfile_convert(FILE *out, const tofin_file *tofin, const cutfile *cutfile) 
 
         double weight = weight_cutfile; /* TODO: efficiency correction */
         double energy = energy_from_tof(tofin, tof, cutfile->element->avg_mass);
-        //0.000000e+00 0.000000e+00    2.98967  14  28.0855 ERD  1.000 947984
+        double stop = tofelist_stop(jibal->gsto, cutfile->element->Z, cutfile->element->avg_mass, foil, energy) * tofin->foil_thickness;
+        energy += stop;
         fprintf(out, "%12e %12e %8.5lf %3i %8.4lf %4s %.5lf %i\n", angle1, angle2, energy / C_MEV, Z, mass, type_str, weight, evnum);
     }
     /* TODO: Check that number of events matches with the header */
@@ -357,9 +370,9 @@ void tofe_files_print(list_files *files) {
     }
 }
 
-int tofe_files_convert(const tofin_file *tofin, list_files *files) {
+int tofe_files_convert(jibal *jibal, const tofin_file *tofin, list_files *files, const jibal_material *foil) {
     for(size_t i = 0; i < files->n_files; i++) {
-        cutfile_convert(stdout, tofin, &files->cutfiles[i]);
+        cutfile_convert(jibal, stdout, tofin, &files->cutfiles[i], foil);
     }
     return 0;
 }
@@ -379,8 +392,11 @@ int tofe_files_assign_stopping(jibal *jibal, const list_files *files, const jiba
 }
 
 double energy_from_tof(const tofin_file *tofin, int ch, double mass) {
-    double tof = (ch + ((double)(rand())/RAND_MAX) - 0.5) * tofin->tof_slope + tofin->tof_slope;
-    //fprintf(stderr, "tof = %g s, ch = %i mass = %g\n", tof, ch, mass / C_U);
+    double tof = ((double)ch + ((double)(rand())/RAND_MAX) - 0.5) * tofin->tof_slope + tofin->tof_offset;
+    //fprintf(stdout, "tof = %g s, ch = %i mass = %g\n", tof, ch, mass / C_U);
+    if(tof < 1.0 * C_NS) {
+        return 0.0;
+    }
     return 0.5 * mass * pow2(tofin->toflen/tof);
 }
 
@@ -413,13 +429,16 @@ int main(int argc, char **argv) {
     jibal_material *foil = jibal_material_create(jibal->elements, "C");
     if(!foil) {
         tofe_list_msg(TOFE_LIST_ERROR, "Could not create carbon foil data structure. JIBAL issue?\n");
+        return EXIT_FAILURE;
     }
+    tofin->foil_thickness /= foil->elements[0].avg_mass; /* TODO: works only on monoelemental foils. Not a massive issue, giving foil thickness in ug/cm2 is quite stupid in this case. */
+    tofe_list_msg(TOFE_LIST_INFO, "Carbon foil thickness %g tfu\n", tofin->foil_thickness / C_TFU);
     tofe_files_assign_stopping(jibal, files, foil);
     if(jibal_gsto_load_all(jibal->gsto) == 0) {
         tofe_list_msg(TOFE_LIST_ERROR, "Could not load stopping. JIBAL issue?\n");
     }
     jibal_gsto_print_assignments(jibal->gsto);
-    tofe_files_convert(tofin, files);
+    tofe_files_convert(jibal, tofin, files, foil);
     jibal_material_free(foil);
     tofe_files_free(files);
     tofin_file_free(tofin);

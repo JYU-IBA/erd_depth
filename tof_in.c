@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <jibal_units.h>
 #include "tof_in.h"
 
 
@@ -22,6 +23,11 @@ int tofin_file_parse_header(tofin_file *tofin, const char *header, const char *d
             }
             break;
         case TOFIN_HEADER_CARBON_FOIL_THICKNESS:
+            tofin->foil_thickness = strtod(data, &end);
+            if(end == data) {
+                fprintf(stderr, "Carbon foil thickness could not be parsed.\n");
+            }
+            tofin->foil_thickness *= (C_UG/C_CM2);
             break;
         case TOFIN_HEADER_TARGET_DENSITY:
             break;

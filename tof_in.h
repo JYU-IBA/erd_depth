@@ -2,10 +2,11 @@
 #define TOF_IN_H
 
 #include <jibal_option.h>
+#define CARBON_DENSITY
 
 typedef struct tofin_file {
     double toflen;
-    double foil_thickness;
+    double foil_thickness; /* initially in ug/cm2, then in tfu */
     double tof_slope;
     double tof_offset;
     double angle_slope;

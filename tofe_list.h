@@ -84,11 +84,11 @@ int cutfile_parse_extensions(jibal *jibal, cutfile *cutfile, char **extensions, 
 int cutfile_read_headers(cutfile *cutfile);
 void cutfile_reset(cutfile *cutfile);
 void cutfile_free(cutfile *cutfile);
-int cutfile_convert(FILE *out, const tofin_file *tofin, const cutfile *cutfile);
+int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutfile *cutfile, const jibal_material *foil);
 list_files *tofe_files_from_argv(jibal *jibal, int argc, char **argv);
 char *tofe_basename(const char *path);
 void tofe_files_print(list_files *files);
-int tofe_files_convert(const tofin_file *tofin, list_files *files);
 int tofe_files_assign_stopping(jibal *jibal, const list_files *files, const jibal_material *foil);
+int tofe_files_convert(jibal *jibal, const tofin_file *tofin, list_files *files, const jibal_material *foil);
 double energy_from_tof(const tofin_file *tofin, int ch, double mass);
 #endif //TOFE_LIST_H
