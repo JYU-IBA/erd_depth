@@ -312,7 +312,7 @@ int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutf
         return -1;
     }
     weight_avg /= (double)n_counts;
-    tofe_list_msg(TOFE_LIST_INFO, "File \"%s\": converted %zu counts, cutfile weight %.5lf, average weight %.5lf", cutfile->basename, cutfile->event_weight, weight_avg);
+    tofe_list_msg(TOFE_LIST_INFO, "File \"%s\": converted %zu counts, cutfile weight %.5lf, average weight %.5lf, ratio of these %.5lf", cutfile->basename, cutfile->event_weight, weight_avg, weight_avg/cutfile->event_weight);
     return 0;
 }
 
@@ -376,13 +376,14 @@ void tofe_files_print(list_files *files) {
     if(!files) {
         return;
     }
-    fprintf(stderr, "%32s | type | isotopes |   Z |    mass | sample element | weight | eff? | headers |   counts\n", "filename");
+    fprintf(stderr, "%32s | type | element | isotopes |   Z |    mass | sample element | weight | eff? | headers |   counts\n", "filename");
     for(size_t i = 0; i < files->n_files; i++) {
         cutfile *cutfile = &files->cutfiles[i];
-        fprintf(stderr, "%32s | %4s |   %6zu | %3i | %7.4lf | %14s | %6.3lf | %4s | %7i | %8zu\n",
-                cutfile->basename, tofe_scatter_types[cutfile->type].s, cutfile->element->n_isotopes,
-                cutfile->element->Z,  cutfile->element->avg_mass / C_U, cutfile->element_sample->name,
-                cutfile->event_weight, cutfile->ef?"yes":"no", cutfile->header_lines, cutfile->n_counts);
+        fprintf(stderr, "%32s | %4s | %7s |  %7zu | %3i | %7.4lf | %14s | %6.3lf | %4s | %7i | %8zu\n",
+                cutfile->basename, tofe_scatter_types[cutfile->type].s, cutfile->element->name,
+                cutfile->element->n_isotopes, cutfile->element->Z,  cutfile->element->avg_mass / C_U,
+                cutfile->element_sample->name, cutfile->event_weight, cutfile->ef?"yes":"no", cutfile->header_lines,
+                cutfile->n_counts);
     }
 }
 
@@ -449,6 +450,7 @@ efficiencyfile *efficiencyfile_load(const char *filename) {
         tofe_list_msg(TOFE_LIST_WARNING, "Initial allocation of efficiency file failed. This shouldn't happen.");
         return NULL;
     }
+    double eff_avg = 0.0;
     while(getline(&line, &line_size, f) > 0) {
         if(*line == '#') { /* Comment */
             continue;
@@ -467,6 +469,7 @@ efficiencyfile *efficiencyfile_load(const char *filename) {
             break;
         }
         ef->p[n].E *= C_MEV;
+        eff_avg += ef->p[n].eff;
         n++;
     }
     if(!feof(f)) {
@@ -474,7 +477,8 @@ efficiencyfile *efficiencyfile_load(const char *filename) {
         efficiencyfile_free(ef);
         return NULL;
     }
-    tofe_list_msg(TOFE_LIST_INFO, "Got %zu points from efficiency file \"%s\". Highest energy %g MeV.", n, filename, ef->p[n-1].E / C_MEV);
+    eff_avg /= (double) n;
+    tofe_list_msg(TOFE_LIST_INFO, "Got %zu points from efficiency file \"%s\". Highest energy %g MeV. Simple arithmetic average of efficiencies: %g.", n, filename, ef->p[n-1].E / C_MEV, eff_avg);
     ef->n_points = n; /* We could also realloc to save unused space */
     return ef;
 }
