@@ -1,6 +1,5 @@
 #include <stdlib.h>
 #include <string.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <jibal.h>
 #include <jibal_stop.h>
@@ -13,32 +12,9 @@
 #include <libgen.h> /* for basename() */
 #include <sys/param.h> /* for MAXPATHLEN */
 #endif
+#include "message.h"
 #include "tof_in.h"
 #include "tofe_list.h"
-
-const char *msg_level_str(tofe_list_msg_level level) {
-    switch(level) {
-        case TOFE_LIST_NORMAL:
-            return "";
-        case TOFE_LIST_INFO:
-            return "info";
-        case TOFE_LIST_WARNING:
-            return "warning";
-        case TOFE_LIST_ERROR:
-            return "error";
-        default:
-            return "";
-    }
-}
-
-void tofe_list_msg(tofe_list_msg_level level, const char *restrict format, ...) {
-    va_list ap;
-    va_start(ap, format);
-    fprintf(stderr, "tofe_list %s: ", msg_level_str(level));
-    vfprintf(stderr, format, ap);
-    fputc('\n', stderr);
-    va_end(ap);
-}
 
 void tofe_files_free(list_files *files) {
     if(!files) {
@@ -297,7 +273,13 @@ int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutf
 
         double weight = weight_cutfile;
         if(cutfile->ef) {
-            weight *= efficiencyfile_get_weight(cutfile->ef, energy);
+            double eff = efficiencyfile_get_weight(cutfile->ef, energy);
+            if(eff < 1e-6) {
+                tofe_list_msg(TOFE_LIST_WARNING, "Efficiency %g too low, setting weight of count (event number = %i, line number = %i) in file %s to zero.\n", eff, evnum, lineno, cutfile->basename);
+                weight = 0.0;
+            } else {
+                weight *= 1.0 / eff;
+            }
         }
         weight_avg += weight;
 
@@ -311,7 +293,7 @@ int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutf
         return -1;
     }
     weight_avg /= (double)n_counts;
-    tofe_list_msg(TOFE_LIST_INFO, "File \"%s\": converted %zu counts, cutfile weight %.5lf, average weight %.5lf, ratio of these %.5lf", cutfile->basename, cutfile->event_weight, weight_avg, weight_avg/cutfile->event_weight);
+    tofe_list_msg(TOFE_LIST_INFO, "File \"%s\": converted %zu counts, cutfile weight %.5lf, average weight %.5lf, ratio of these %.5lf", cutfile->basename, n_counts, cutfile->event_weight, weight_avg, weight_avg/cutfile->event_weight);
     return 0;
 }
 

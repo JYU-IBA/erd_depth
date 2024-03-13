@@ -17,8 +17,21 @@ find_package(OpenMP)
 
 configure_file(erd_depth_config.h.in erd_depth_config.h @ONLY)
 
+if(APPLE) #Hack to fix some issues with rpath on macOS
+    set(CMAKE_SKIP_BUILD_RPATH FALSE)
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+    set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+    list(FIND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES "${CMAKE_INSTALL_PREFIX}/lib" isSystemDir)
+    if("${isSystemDir}" STREQUAL "-1")
+        set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+    endif("${isSystemDir}" STREQUAL "-1")
+endif()
+
+
+
 add_executable(erd_depth erd_depth.c)
-add_executable(tofe_list tofe_list.c tofe_list.h tof_in.c tof_in.h)
+add_executable(tofe_list tofe_list.c tofe_list.h tof_in.c tof_in.h message.c message.h)
 
 target_include_directories(erd_depth PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>) #Because of erd_depth_config.h

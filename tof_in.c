@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <jibal_units.h>
+#include "message.h"
 #include "tof_in.h"
 
 
@@ -19,13 +20,14 @@ int tofin_file_parse_header(tofin_file *tofin, const char *header, const char *d
         case TOFIN_HEADER_TOFLEN:
             tofin->toflen = strtod(data, &end);
             if(end == data) {
-                fprintf(stderr, "ToF length could not be parsed.\n");
+                tofe_list_msg(TOFE_LIST_ERROR, "ToF length could not be parsed.");
+                return -1;
             }
             break;
         case TOFIN_HEADER_CARBON_FOIL_THICKNESS:
             tofin->foil_thickness = strtod(data, &end);
             if(end == data) {
-                fprintf(stderr, "Carbon foil thickness could not be parsed.\n");
+                tofe_list_msg(TOFE_LIST_ERROR, "Carbon foil thickness could not be parsed.");
             }
             tofin->foil_thickness *= (C_UG/C_CM2);
             break;
@@ -33,13 +35,13 @@ int tofin_file_parse_header(tofin_file *tofin, const char *header, const char *d
             break;
         case TOFIN_HEADER_TOF_CALIBRATION:
             if(sscanf(data, "%lf %lf", &tofin->tof_slope, &tofin->tof_offset) != 2) {
-                fprintf(stderr, "ToF calibration could not be parsed.\n");
+                tofe_list_msg(TOFE_LIST_ERROR, "ToF calibration could not be parsed.");
                 return -1;
             }
             break;
         case TOFIN_HEADER_ANGLE_CALIBRATION:
             if(sscanf(data, "%lf %lf", &tofin->angle_slope, &tofin->angle_offset) != 2) {
-                fprintf(stderr, "Angle calibration could not be parsed.\n");
+                tofe_list_msg(TOFE_LIST_ERROR, "Angle calibration could not be parsed.");
                 return -1;
             }
             break;
@@ -61,7 +63,7 @@ int tofin_file_parse_header(tofin_file *tofin, const char *header, const char *d
             break;
         case TOFIN_HEADER_NONE:
         default:
-            fprintf(stderr, "Warning: unknown header \"%s\"", header);
+            tofe_list_msg(TOFE_LIST_WARNING, "Unknown header \"%s\"", header);
             break;
     }
     return 0;
@@ -89,7 +91,7 @@ tofin_file *tofin_file_load(const char *filename) {
         strsep(&line_data, ":");
         while(*line_data == ' ') {line_data++;} /* Skip whitespace */
         if(tofin_file_parse_header(tofin, line, line_data)) {
-            fprintf(stderr, "Parse error on line %i of file \"%s\".\n", lineno, filename);
+            tofe_list_msg(TOFE_LIST_ERROR, "Parse error on line %i of file \"%s\".", lineno, filename);
             error++;
             break;
         }
@@ -100,7 +102,7 @@ tofin_file *tofin_file_load(const char *filename) {
     }
     free(line);
     fclose(f);
-    fprintf(stderr, "Read %i lines from \"%s\".\n", lineno, filename);
+    tofe_list_msg(TOFE_LIST_INFO, "Read %i lines from \"%s\".\n", lineno, filename);
     return tofin;
 }
 
