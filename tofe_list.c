@@ -375,10 +375,17 @@ void tofe_files_print(list_files *files) {
     if(!files) {
         return;
     }
-    fprintf(stderr, "%32s | type | element | isotopes |   Z |    mass | sample element | weight | eff? | headers |   counts\n", "filename");
+    int longest_name = 0;
     for(size_t i = 0; i < files->n_files; i++) {
         cutfile *cutfile = &files->cutfiles[i];
-        fprintf(stderr, "%32s | %4s | %7s |  %7zu | %3i | %7.4lf | %14s | %6.3lf | %4s | %7i | %8zu\n",
+        int len = strlen(cutfile->basename);
+        longest_name = len > longest_name ? len : longest_name;
+    }
+    fprintf(stderr, "%*s | type | element | isotopes |   Z |    mass | sample element | weight | eff? | headers |   counts\n",
+            longest_name, "filename");
+    for(size_t i = 0; i < files->n_files; i++) {
+        cutfile *cutfile = &files->cutfiles[i];
+        fprintf(stderr, "%*s | %4s | %7s |  %7zu | %3i | %7.4lf | %14s | %6.3lf | %4s | %7i | %8zu\n", longest_name,
                 cutfile->basename, tofe_scatter_types[cutfile->type].s, cutfile->element->name,
                 cutfile->element->n_isotopes, cutfile->element->Z,  cutfile->element->avg_mass / C_U,
                 cutfile->element_sample->name, cutfile->event_weight, cutfile->ef?"yes":"no", cutfile->header_lines,
@@ -490,10 +497,14 @@ void efficiencyfile_free(efficiencyfile *ef) {
 }
 
 char *cutfile_efficiencyfile_name(const cutfile *cutfile, const tofin_file *tofin) {
-    char *filename;
-    if(asprintf(&filename, "%s/%s.eff", tofin->efficiency_directory, cutfile->element->name) < 0) {
+    if(!cutfile || !tofin || !tofin->efficiency_directory) {
         return NULL;
     }
+    char *filename = calloc(strlen(tofin->efficiency_directory) + 1 + strlen(cutfile->element->name) + 4 + 1, sizeof(char));
+    strcat(filename, tofin->efficiency_directory);
+    strcat(filename, "/");
+    strcat(filename, cutfile->element->name);
+    strcat(filename, ".eff");
     return filename;
 }
 
