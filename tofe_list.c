@@ -376,13 +376,35 @@ void tofe_files_print(list_files *files) {
 }
 
 int tofe_files_convert(jibal *jibal, const tofin_file *tofin, list_files *files, const jibal_material *foil) {
+    size_t n_eff = 0;
+    size_t eff_str_len = 1;
+    char *eff_str = NULL;
     for(size_t i = 0; i < files->n_files; i++) {
         cutfile *cutfile =  &files->cutfiles[i];
         if(cutfile_convert(jibal, stdout, tofin, cutfile, foil)) {
             tofe_list_msg(TOFE_LIST_ERROR, "Error while processing cutfile \"%s\"\n", cutfile->filename);
             return -1;
         }
+        if(cutfile->ef) {
+            n_eff++;
+            eff_str_len += strlen(cutfile->ef->basename) + 1;
+        }
     }
+    if(n_eff == 0) {
+        return 0;
+    }
+    eff_str = calloc(eff_str_len, sizeof(char));
+    if(!eff_str) {
+        return -1;
+    }
+    for(size_t i = 0; i < files->n_files; i++) {
+        cutfile *cutfile =  &files->cutfiles[i];
+        if(cutfile->ef) {
+            strcat(eff_str, cutfile->ef->basename);
+        }
+    }
+    tofe_list_msg(TOFE_LIST_INFO, "Used efficiency files (%zu): %s", n_eff, eff_str);
+    free(eff_str);
     return 0;
 }
 
@@ -431,6 +453,7 @@ efficiencyfile *efficiencyfile_load(const char *filename) {
         return NULL;
     }
     efficiencyfile *ef = calloc(1, sizeof(efficiencyfile));
+    ef->basename = tofe_basename(filename);
     char *line = NULL;
     size_t line_size = 0;
     size_t n = 0;
@@ -474,6 +497,7 @@ void efficiencyfile_free(efficiencyfile *ef) {
     if(!ef) {
         return;
     }
+    free(ef->basename);
     free(ef->p);
     free(ef);
 }

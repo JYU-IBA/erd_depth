@@ -24,6 +24,7 @@ typedef struct efficiencypoint {
 } efficiencypoint;
 
 typedef struct efficiencyfile {
+    char *basename;
     efficiencypoint *p;
     size_t n_points;
 } efficiencyfile;
