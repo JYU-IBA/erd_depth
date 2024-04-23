@@ -459,10 +459,10 @@ char *get_symbol(int z) {
 
 void calculate_recoil_depths(General *general, Measurement *meas, Event *event,
                              Stopping *sto, Concentration *conc) {
-
+    int ie;
 #pragma omp parallel default(none) shared(general, meas, event, sto, conc)
 #pragma omp for schedule(static, PARALLEL_EVENTS)
-    for (int ie = 0; ie < general->nevents; ie++) {
+    for (ie = 0; ie < general->nevents; ie++) {
         double K, dmult, recE, beamE, d, dstep, M, dE = 0, w, bk, rk;
         int Z, id;
         Z = event[ie].Z;
