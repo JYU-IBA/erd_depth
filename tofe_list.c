@@ -344,12 +344,11 @@ char *tofe_basename(const char *path) { /*  e.g. /bla/bla/tofe2363.O.ERD.0.cut =
     free(ext);
     return out;
 #else
-    char *bname = calloc(MAXPATHLEN, sizeof(char));
-    if(!basename_r(path, bname)) {
-        free(bname);
+    char *bname = basename(path);
+    if(!bname) {
         return NULL;
     }
-    return bname;
+    return strdup(bname);
 #endif
 }
 
