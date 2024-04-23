@@ -331,6 +331,9 @@ list_files *tofe_files_from_argv(jibal *jibal, const tofin_file *tofin, int argc
 }
 
 char *tofe_basename(const char *path) { /*  e.g. /bla/bla/tofe2363.O.ERD.0.cut => tofe2363.O.ERD.0.cut  */
+    if(!path || *path == 0) {
+        return NULL;
+    }
 #ifdef WIN32
     char *fname = malloc(_MAX_FNAME);
     char *fname_orig = fname;
@@ -344,11 +347,15 @@ char *tofe_basename(const char *path) { /*  e.g. /bla/bla/tofe2363.O.ERD.0.cut =
     free(ext);
     return out;
 #else
-    char *bname = basename(path);
+    char *path_copy = strdup(path);
+    char *bname = basename(path_copy); /* basename can't be trusted, take a copy */
     if(!bname) {
+        free(path_copy);
         return NULL;
     }
-    return strdup(bname);
+    char *bname_copy = strdup(bname); /* caller should free memory, but basename may return a pointer to static memory or do something silly. We'll take a copy. */
+    free(path_copy); /* Now it is safe to remove this */
+    return bname_copy;
 #endif
 }
 
