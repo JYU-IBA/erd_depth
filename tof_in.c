@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <jibal_units.h>
+#ifdef WIN32
+#include "win_compat.h"
+#endif
 #include "message.h"
 #include "tof_in.h"
 
