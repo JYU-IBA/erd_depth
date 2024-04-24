@@ -171,7 +171,6 @@ int cutfile_read_headers(cutfile *cutfile) {
         return -1;
     }
     int error = 0;
-    int type = SCATTER_NONE;
     while(getline(&line, &line_size, f) > 0) {
         lineno++;
         if(*line == '#') /* Comments are allowed */
@@ -562,6 +561,11 @@ int main(int argc, char **argv) {
         tofe_list_msg(TOFE_LIST_ERROR, "Not enough arguments. Usage: tofe_list <tof.in file> <cutfile1> <cutfile2> ...");
         return EXIT_FAILURE;
     }
+    jibal *jibal = jibal_init(NULL);
+    if(!jibal) {
+        tofe_list_msg(TOFE_LIST_ERROR, "JIBAL initialization by tofe_list failed.");
+        return EXIT_FAILURE;
+    }
     argc--;
     argv++;
     tofin_file *tofin = tofin_file_load(argv[0]);
@@ -571,9 +575,9 @@ int main(int argc, char **argv) {
     }
     argc--;
     argv++;
-    jibal *jibal = jibal_init(NULL);
     list_files *files = tofe_files_from_argv(jibal, tofin, argc, argv);
     if(!files) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Error in reading cutfiles.");
         return EXIT_FAILURE;
     }
     tofe_files_print(files);
@@ -600,5 +604,6 @@ int main(int argc, char **argv) {
     tofe_files_free(files);
     tofin_file_free(tofin);
     jibal_free(jibal);
+    tofe_list_msg(TOFE_LIST_INFO, "Clean exit from tofe_list. Have a nice day.");
     return EXIT_SUCCESS;
 }
