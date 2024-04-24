@@ -31,7 +31,12 @@ endif()
 
 
 add_executable(erd_depth erd_depth.c)
-add_executable(tofe_list tofe_list.c tofe_list.h tof_in.c tof_in.h message.c message.h)
+add_executable(tofe_list
+        tofe_list.c tofe_list.h
+        tof_in.c tof_in.h
+        message.c message.h
+        "$<$<BOOL:${WIN32}>:win_compat.c>"
+)
 
 target_include_directories(erd_depth PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>) #Because of erd_depth_config.h

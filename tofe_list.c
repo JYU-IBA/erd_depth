@@ -8,6 +8,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include "win_compat.h"
 #else
 #include <libgen.h> /* for basename() */
 #include <sys/param.h> /* for MAXPATHLEN */
@@ -304,6 +305,9 @@ list_files *tofe_files_from_argv(jibal *jibal, const tofin_file *tofin, int argc
     list_files *files = malloc(sizeof(list_files));
     files->n_files = argc;
     files->cutfiles = calloc(files->n_files, sizeof(cutfile));
+    if(!files->cutfiles) {
+        return NULL;
+    }
     int error = 0;
     for(int i = 0; i < argc; i++) {
         cutfile *cutfile = &files->cutfiles[i];
