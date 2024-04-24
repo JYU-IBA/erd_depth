@@ -243,8 +243,8 @@ int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutf
     char *line = NULL;
     size_t line_size = 0;
     int lineno = 0;
-    int Z = cutfile->element->Z;
-    double mass = cutfile->element->avg_mass / C_U;
+    const int Z_out = cutfile->element_sample->Z;
+    const double mass_out = cutfile->element_sample->avg_mass / C_U;
     double weight_cutfile = cutfile->event_weight;
     const char *type_str = tofe_scatter_types[cutfile->type].s;
     size_t n_counts = 0;
@@ -283,7 +283,7 @@ int cutfile_convert(jibal *jibal, FILE *out, const tofin_file *tofin, const cutf
         }
         weight_avg += weight;
 
-        fprintf(out, "%8.5lf %8.5lf %8.5lf %3i %8.4lf %3s %8.5lf %8i\n", angle1, angle2, energy / C_MEV, Z, mass, type_str, weight, evnum);
+        fprintf(out, "%8.5lf %8.5lf %8.5lf %3i %8.4lf %3s %8.5lf %8i\n", angle1, angle2, energy / C_MEV, Z_out, mass_out, type_str, weight, evnum);
         n_counts++;
     }
     fclose(in);
