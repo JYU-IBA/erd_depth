@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
+include(version.cmake)
 project(erd_depth
-        VERSION 1.1.0
+        VERSION ${BUILD_VERSION}
         DESCRIPTION "ERD depth and ToF-E list"
         LANGUAGES C
         )
