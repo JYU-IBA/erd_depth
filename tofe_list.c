@@ -386,7 +386,7 @@ void tofe_files_print(list_files *files) {
 
 int tofe_files_convert(jibal *jibal, const tofin_file *tofin, list_files *files, const jibal_material *foil) {
     size_t n_eff = 0;
-    size_t eff_str_len = 1;
+    size_t eff_str_len = 1; /* must have at least terminating \0 */
     char *eff_str = NULL;
     for(size_t i = 0; i < files->n_files; i++) {
         cutfile *cutfile =  &files->cutfiles[i];
@@ -396,7 +396,7 @@ int tofe_files_convert(jibal *jibal, const tofin_file *tofin, list_files *files,
         }
         if(cutfile->ef) {
             n_eff++;
-            eff_str_len += strlen(cutfile->ef->basename) + 1;
+            eff_str_len += strlen(cutfile->ef->basename) + 3; /* +3 to account for spaces between names and quotes around them */
         }
     }
     if(n_eff == 0) {
@@ -409,10 +409,12 @@ int tofe_files_convert(jibal *jibal, const tofin_file *tofin, list_files *files,
     for(size_t i = 0; i < files->n_files; i++) {
         cutfile *cutfile =  &files->cutfiles[i];
         if(cutfile->ef) {
+            strcat(eff_str, " \""); /* 2 characters */
             strcat(eff_str, cutfile->ef->basename);
+            strcat(eff_str, "\""); /* 1 character */
         }
     }
-    tofe_list_msg(TOFE_LIST_INFO, "Used efficiency files (%zu): %s", n_eff, eff_str);
+    tofe_list_msg(TOFE_LIST_INFO, "Used efficiency files (%zu):%s", n_eff, eff_str);
     free(eff_str);
     return 0;
 }
