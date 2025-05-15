@@ -558,6 +558,7 @@ double efficiencyfile_get_weight(efficiencyfile *ef, double E) {
 
 
 int main(int argc, char **argv) {
+    tofe_list_msg(TOFE_LIST_INFO, "tofe_list (erd_depth) version %s\n", ERD_DEPTH_VERSION);
 #ifdef DEBUG
     for(int i = 0; i < argc; i++) {
         fprintf(stderr, "tofe_list argv[%i] = %s\n", i, argv[i]);

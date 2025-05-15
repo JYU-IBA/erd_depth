@@ -10,6 +10,8 @@ set(CMAKE_REQUIRED_LIBRARIES "m")
 
 set(CMAKE_C_STANDARD 99)
 
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
+
 find_package(Jibal 0.3.11 REQUIRED)
 if(Jibal_FOUND)
     message(STATUS "JIBAL ${Jibal_VERSION} headers found at ${Jibal_INCLUDE_DIR}")
