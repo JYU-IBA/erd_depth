@@ -12,8 +12,8 @@
 #else
 #include <libgen.h> /* for basename() */
 #include <sys/param.h> /* for MAXPATHLEN */
-#include "erd_depth_config.h"
 #endif
+#include "erd_depth_config.h"
 #include "message.h"
 #include "tof_in.h"
 #include "tofe_list.h"
