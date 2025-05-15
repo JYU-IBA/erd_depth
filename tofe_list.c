@@ -12,6 +12,7 @@
 #else
 #include <libgen.h> /* for basename() */
 #include <sys/param.h> /* for MAXPATHLEN */
+#include "erd_depth_config.h"
 #endif
 #include "message.h"
 #include "tof_in.h"
@@ -458,9 +459,10 @@ int efficiencyfile_points_realloc(efficiencyfile *ef, size_t n_points) {
     return 0;
 }
 
-efficiencyfile *efficiencyfile_load(const char *filename) {
+efficiencyfile *efficiencyfile_load(const char *filename, int *error_out) {
     FILE *f = fopen(filename, "r");
     if(!f) { /* Fail silently; the file might not exist */
+        *error_out = FALSE;
         return NULL;
     }
     efficiencyfile *ef = calloc(1, sizeof(efficiencyfile));
@@ -470,10 +472,13 @@ efficiencyfile *efficiencyfile_load(const char *filename) {
     size_t n = 0;
     if(efficiencyfile_points_realloc(ef, EFFICIENCY_FILE_POINTS_INITIAL_ALLOC)) {
         tofe_list_msg(TOFE_LIST_WARNING, "Initial allocation of efficiency file failed. This shouldn't happen.");
+        *error_out = TRUE;
         return NULL;
     }
     double eff_avg = 0.0;
+    size_t lineno = 0;
     while(getline(&line, &line_size, f) > 0) {
+        lineno++;
         if(*line == '#') { /* Comment */
             continue;
         }
@@ -484,10 +489,13 @@ efficiencyfile *efficiencyfile_load(const char *filename) {
         if(n >= ef->n_points) {
             if(efficiencyfile_points_realloc(ef, ef->n_points * 2)) {
                 tofe_list_msg(TOFE_LIST_WARNING, "Allocation of efficiency file failed (old n = %zu)", ef->n_points);
+                *error_out = TRUE;
                 return NULL;
             }
         }
         if(sscanf(line, "%lf %lf", &ef->p[n].E, &ef->p[n].eff) != 2) {
+            tofe_list_msg(TOFE_LIST_ERROR, "Error in reading efficiency file \"%s\" on line %zu: %s", filename, lineno, line);
+            *error_out = TRUE;
             break;
         }
         ef->p[n].E *= C_MEV;
@@ -495,13 +503,22 @@ efficiencyfile *efficiencyfile_load(const char *filename) {
         n++;
     }
     if(!feof(f)) {
-        tofe_list_msg(TOFE_LIST_WARNING, "Reading of efficiency file \"%s\" was aborted before the end was reached.\n");
+        tofe_list_msg(TOFE_LIST_ERROR, "Reading of efficiency file \"%s\" was aborted before the end was reached. Read %i lines.\n", lineno);
         efficiencyfile_free(ef);
+        *error_out = TRUE;
         return NULL;
     }
     eff_avg /= (double) n;
-    tofe_list_msg(TOFE_LIST_INFO, "Got %zu points from efficiency file \"%s\". Highest energy %g MeV. Simple arithmetic average of efficiencies: %g.", n, filename, ef->p[n-1].E / C_MEV, eff_avg);
-    ef->n_points = n; /* We could also realloc to save unused space */
+#if 0
+    efficiencyfile_points_realloc(ef, n);/* we could reallocate, but probably not worth it */
+#endif
+    ef->n_points = n;
+    if(n < 2) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Efficiency file \"%s\" has less than two points (%zu in %zu lines). Parsing error or not enough data.\n", n, lineno, filename);
+        *error_out = TRUE;
+        return NULL;
+    }
+    tofe_list_msg(TOFE_LIST_INFO, "Got %zu points (in %zu lines) from efficiency file \"%s\". Highest energy %g MeV. Simple arithmetic average of efficiencies: %g.", n, lineno, filename, ef->p[n-1].E / C_MEV, eff_avg);
     return ef;
 }
 void efficiencyfile_free(efficiencyfile *ef) {
@@ -528,10 +545,15 @@ char *cutfile_efficiencyfile_name(const cutfile *cutfile, const tofin_file *tofi
 int cutfile_load_efficiencyfile(cutfile *cutfile, const tofin_file *tofin) {
     char *eff_filename = cutfile_efficiencyfile_name(cutfile, tofin);
     if(!eff_filename) {
-        tofe_list_msg(TOFE_LIST_ERROR, "Efficiency filename error.\n");
+        tofe_list_msg(TOFE_LIST_ERROR, "Efficiency filename error.");
         return -1;
     }
-    cutfile->ef = efficiencyfile_load(eff_filename);
+    int error = 0;
+    cutfile->ef = efficiencyfile_load(eff_filename, &error);
+    if(error) {
+        tofe_list_msg(TOFE_LIST_ERROR, "Error while loading efficiency file \"%s\".", eff_filename);
+        return -1;
+    }
     return 0;
 }
 

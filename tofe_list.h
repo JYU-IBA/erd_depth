@@ -87,7 +87,7 @@ void tofe_files_print(list_files *files);
 int tofe_files_assign_stopping(jibal *jibal, const list_files *files, const jibal_material *foil);
 int tofe_files_convert(jibal *jibal, const tofin_file *tofin, list_files *files, const jibal_material *foil);
 double energy_from_tof(const tofin_file *tofin, int ch, double mass);
-efficiencyfile *efficiencyfile_load(const char *filename);
+efficiencyfile *efficiencyfile_load(const char *filename, int *error_out);
 void efficiencyfile_free(efficiencyfile *ef);
 int efficiencyfile_points_realloc(efficiencyfile *ef, size_t n_points);
 double efficiencyfile_get_weight(efficiencyfile *ef, double E);
