@@ -503,7 +503,7 @@ efficiencyfile *efficiencyfile_load(const char *filename, int *error_out) {
         n++;
     }
     if(!feof(f)) {
-        tofe_list_msg(TOFE_LIST_ERROR, "Reading of efficiency file \"%s\" was aborted before the end was reached. Read %i lines.\n", lineno);
+        tofe_list_msg(TOFE_LIST_ERROR, "Reading of efficiency file \"%s\" was aborted before the end was reached. Read %i lines.", lineno);
         efficiencyfile_free(ef);
         *error_out = TRUE;
         return NULL;
@@ -514,7 +514,7 @@ efficiencyfile *efficiencyfile_load(const char *filename, int *error_out) {
 #endif
     ef->n_points = n;
     if(n < 2) {
-        tofe_list_msg(TOFE_LIST_ERROR, "Efficiency file \"%s\" has less than two points (%zu in %zu lines). Parsing error or not enough data.\n", n, lineno, filename);
+        tofe_list_msg(TOFE_LIST_ERROR, "Efficiency file \"%s\" has less than two points (%zu in %zu lines). Parsing error or not enough data.", n, lineno, filename);
         *error_out = TRUE;
         return NULL;
     }
@@ -580,7 +580,7 @@ double efficiencyfile_get_weight(efficiencyfile *ef, double E) {
 
 
 int main(int argc, char **argv) {
-    tofe_list_msg(TOFE_LIST_INFO, "tofe_list (erd_depth) version %s\n", ERD_DEPTH_VERSION);
+    tofe_list_msg(TOFE_LIST_INFO, "tofe_list (erd_depth) version %s", ERD_DEPTH_VERSION);
 #ifdef DEBUG
     for(int i = 0; i < argc; i++) {
         fprintf(stderr, "tofe_list argv[%i] = %s\n", i, argv[i]);
